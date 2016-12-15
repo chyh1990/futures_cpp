@@ -1,0 +1,19 @@
+
+CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+INCLUDE(cppbuild_common)
+PROJECT(futures_cpp)
+
+CPPBUILD_ENABLE_CXX11()
+CPPBUILD_DEPEND()
+
+INCLUDE_DIRECTORIES(${futures_cpp_SOURCE_DIR}/include)
+SET(ALL_SRC src/futures_cpp.cpp)
+
+if(IOS)
+CPPBUILD_MANGLELIB_TARGET(futures_cpp ${ALL_SRC})
+else()
+CPPBUILD_DYNLIB_TARGET(futures_cpp ${ALL_SRC})
+endif()
+CPPBUILD_INSTALL_LIB(futures_cpp)
+
+CPPBUILD_UNITTEST()

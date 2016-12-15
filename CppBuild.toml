@@ -1,0 +1,16 @@
+
+[package]
+name = "futures_cpp"
+version = "0.1.0"
+authors = ["Yuheng Chen <yuhengchen@sensetime.com>"]
+
+[exports]
+includes = ["include"]
+
+[dependencies.gtest]
+branch = "cppbuild"
+url = "git@gitlab.bj.sensetime.com:core/googletest.git"
+
+[dependencies.BoostParts]
+branch = "master"
+url = "git@gitlab.bj.sensetime.com:core/BoostParts.git"
