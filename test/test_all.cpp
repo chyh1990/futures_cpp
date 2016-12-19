@@ -13,7 +13,7 @@
 using namespace futures;
 
 TEST(Future, Trait) {
-	EXPECT_TRUE(std::is_copy_constructible<Future<int>>::value);
+	EXPECT_FALSE(std::is_copy_constructible<Future<int>>::value);
 	EXPECT_TRUE(std::is_move_constructible<Future<int>>::value);
 }
 
@@ -40,16 +40,24 @@ TEST(Future, Ok) {
 
 TEST(Future, Chain) {
 	auto f = Future<int>::ok(5);
-	auto chain = makeChain(f, [] (Try<int> v) {
+	auto chain = makeChain(std::move(f), [] (Try<int> v) {
 			return Future<int>::ok('c');
 		}
 	);
 	auto t = chain.poll();
 }
 
+TEST(Future, Move) {
+	auto f = Future<int>::ok(5);
+	auto f1 = f.andThen([] (int v) {
+			return Future<folly::Unit>::ok(folly::Unit());
+	});
+	EXPECT_THROW(f.wait(), MovedFutureException);
+}
+
 TEST(Future, Chain1) {
 	auto f = Future<std::unique_ptr<int>>::ok(folly::make_unique<int>(5));
-	auto chain = makeChain(f, [] (Try<std::unique_ptr<int>> v) {
+	auto chain = makeChain(std::move(f), [] (Try<std::unique_ptr<int>> v) {
 			return Future<int>::ok('c');
 		}
 	);
@@ -72,7 +80,7 @@ TEST(Future, AndThen) {
 
 TEST(Executor, Cpu) {
 	CpuPoolExecutor exec(4);
-	Future<int> f = exec.spawn([&] () {
+	Future<int> f = exec.spawn_fn([&] () {
 			std::cerr << "Start" << std::endl;
 			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 			std::cerr << "End" << std::endl;

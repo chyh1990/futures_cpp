@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 namespace futures {
 
 class Runnable {
@@ -10,7 +12,7 @@ public:
 
 class Executor {
 public:
-    virtual void execute(Runnable *run) = 0;
+    virtual void execute(std::unique_ptr<Runnable> run) = 0;
     virtual ~Executor() = default;
     Executor() {}
 private:

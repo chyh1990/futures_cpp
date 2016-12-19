@@ -54,7 +54,7 @@ template <typename T>
 class OnshotChannel {
 public:
     OnshotChannel()
-        : impl_(new OnshotChannelImpl<T>())
+        : impl_(std::make_shared<OnshotChannelImpl<T>>())
     {
     }
 

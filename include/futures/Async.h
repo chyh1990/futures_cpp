@@ -53,7 +53,7 @@ public:
     Async(const Async& t) {
         static_assert(
                 std::is_copy_constructible<T>::value,
-                "T must be copyable for Try<T> to be copyable");
+                "T must be copyable for Async<T> to be copyable");
         state_ = t.state_;
         if (state_ == State::Ready)
             new (&v_) T(t.v_);
@@ -63,7 +63,7 @@ public:
     Async& operator=(const Async& t) {
         static_assert(
                 std::is_copy_constructible<T>::value,
-                "T must be copyable for Try<T> to be copyable");
+                "T must be copyable for Async<T> to be copyable");
         if (this == &t)
             return *this;
         this->~Async();
@@ -123,5 +123,8 @@ private:
     State state_;
     T v_;
 };
+
+template <typename T>
+using Poll = Try<Async<T>>;
 
 }
