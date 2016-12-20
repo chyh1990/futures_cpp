@@ -6,6 +6,7 @@
 #include <futures/core/Try.h>
 #include <futures/core/Optional.h>
 
+#include <futures/Exception.h>
 #include <futures/Async.h>
 #include <futures/Executor.h>
 #include <futures/Task.h>
@@ -14,38 +15,113 @@
 
 namespace futures {
 
-class InvalidPollStateException : public std::runtime_error {
- public:
-  InvalidPollStateException()
-      : std::runtime_error("Cannot poll twice") {}
-};
-
-class MovedFutureException: public std::runtime_error {
-public:
-  MovedFutureException()
-      : std::runtime_error("Cannot use moved future") {}
-};
-
 template <typename T>
-class FutureImpl {
+class IFuture {
 public:
-    typedef T item_type;
-
     virtual Poll<T> poll() = 0;
-    virtual ~FutureImpl() = default;
+    virtual ~IFuture() = default;
+};
+
+template <typename T, typename FutA, typename F> class ThenFuture;
+template <typename T> class BoxedFuture;
+// future or error
+template <typename FutT> class MaybeFuture;
+
+template <typename Derived, typename T>
+class FutureBase : public IFuture<T> {
+public:
+    typedef T Item;
+
+    Poll<T> poll() override {
+        return derived().poll();
+    }
+
+    template <typename F,
+              typename FutR = typename std::result_of<F(T)>::type,
+              typename R = typename isFuture<FutR>::Inner,
+              typename FN = std::function<MaybeFuture<FutR>(Try<T>)> >
+    ThenFuture<R, Derived, FN> andThen(F&& f);
+
+    template <typename F,
+              typename R = typename isFuture<
+                typename std::result_of<F(Try<T>)>::type>::Inner>
+    ThenFuture<R, Derived, F> then(F&& f);
+
+    BoxedFuture<T> boxed();
+
+    Poll<T> wait();
+
+    Async<T> value() {
+      return wait().value();
+    }
+
+    FutureBase(const FutureBase &) = delete;
+    FutureBase& operator=(const FutureBase &) = delete;
+
+    FutureBase() = default;
+
+#if DEBUG_FUTURE
+    FutureBase(FutureBase &&o) {
+      std::swap(__moved_mark, o.__moved_mark);
+    }
+
+    FutureBase& operator=(FutureBase &&o) {
+      std::swap(__moved_mark, o.__moved_mark);
+    }
+#else
+    FutureBase(FutureBase &&) = default;
+    FutureBase& operator=(FutureBase &&) = default;
+#endif
+private:
+
+#if DEBUG_FUTURE
+    bool __moved_mark = false;
+#endif
+
+    Derived& derived()
+    {
+        return *static_cast<Derived*>(this);
+    }
+
+    Derived move_self() {
+        return std::move(*static_cast<Derived*>(this));
+    }
 };
 
 template <typename T>
-class EmptyFutureImpl : public FutureImpl<T> {
+class BoxedFuture : public FutureBase<BoxedFuture<T>, T> {
 public:
+    typedef T Item;
+
+    Poll<T> poll() {
+        validFuture();
+        return impl_->poll();
+    }
+
+    BoxedFuture(std::unique_ptr<IFuture<T>> f)
+        : impl_(std::move(f)) {}
+
+private:
+    std::unique_ptr<IFuture<T>> impl_;
+
+    void validFuture() {
+      if (!impl_) throw MovedFutureException();
+    }
+};
+
+template <typename T>
+class EmptyFuture : public FutureBase<EmptyFuture<T>, T> {
+public:
+    typedef T Item;
     Poll<T> poll() override {
         return Poll<T>(Async<T>());
     }
 };
 
 template <typename T>
-class ErrFutureImpl : public FutureImpl<T> {
+class ErrFuture : public FutureBase<ErrFuture<T>, T> {
 public:
+    typedef T Item;
     Poll<T> poll() override {
         if (consumed_)
             throw InvalidPollStateException();
@@ -53,7 +129,7 @@ public:
         return Poll<T>(std::move(e_));
     }
 
-    ErrFutureImpl(folly::exception_wrapper e)
+    explicit ErrFuture(folly::exception_wrapper e)
         : consumed_(false), e_(std::move(e)) {
     }
 private:
@@ -62,8 +138,9 @@ private:
 };
 
 template <typename T>
-class OkFutureImpl : public FutureImpl<T> {
+class OkFuture : public FutureBase<OkFuture<T>, T> {
 public:
+    typedef T Item;
     Poll<T> poll() override {
         if (consumed_)
             throw InvalidPollStateException();
@@ -71,11 +148,11 @@ public:
         return Poll<T>(Async<T>(std::move(v_)));
     }
 
-    OkFutureImpl(const T& v)
+    explicit OkFuture(const T& v)
         : consumed_(false), v_(v) {
     }
 
-    OkFutureImpl(T&& v) noexcept
+    explicit OkFuture(T&& v) noexcept
         : consumed_(false), v_(std::move(v)) {
     }
 
@@ -84,11 +161,59 @@ private:
     T v_;
 };
 
-template <typename T, typename F>
-class LazyFutureImpl: public FutureImpl<T> {
+template <typename T>
+class ResultFuture: public FutureBase<ResultFuture<T>, T> {
 public:
-  LazyFutureImpl(F &&fn)
-    : fn_(std::move(fn)) {}
+    typedef T Item;
+
+    ResultFuture(Try<T> &&t)
+      : try_(std::move(t)) {
+    }
+
+    Poll<T> poll() override {
+      if (try_.hasException()) {
+        return Poll<T>(try_.exception());
+      } else {
+        return Poll<T>(Async<T>(folly::moveFromTry(try_)));
+      }
+    }
+
+private:
+    Try<T> try_;
+};
+
+template <typename FutA>
+class MaybeFuture: public FutureBase<MaybeFuture<FutA>, typename isFuture<FutA>::Inner> {
+public:
+    typedef typename isFuture<FutA>::Inner Item;
+
+    explicit MaybeFuture(FutA fut)
+      : try_(std::move(fut)) {
+    }
+
+    explicit MaybeFuture(folly::exception_wrapper ex)
+      : try_(std::move(ex)) {
+    }
+
+    Poll<Item> poll() override {
+      if (try_.hasException()) {
+        return Poll<Item>(try_.exception());
+      } else {
+        return folly::moveFromTry(try_).poll();
+      }
+    }
+
+private:
+    Try<FutA> try_;
+};
+
+
+template <typename T, typename F>
+class LazyFuture: public FutureBase<LazyFuture<T, F>, T> {
+public:
+    typedef T Item;
+    LazyFuture(F &&fn)
+      : fn_(std::move(fn)) {}
 
     Poll<T> poll() override {
       try {
@@ -101,78 +226,7 @@ private:
   F fn_;
 };
 
-template <typename T>
-class Future {
-public:
-    typedef T item_type;
-
-    Try<Async<item_type>> poll() {
-        return impl_->poll();
-    };
-
-    static Future<T> empty() {
-        return Future<T>(folly::make_unique<EmptyFutureImpl<T>>());
-    }
-
-    static Future<T> err(folly::exception_wrapper e) {
-        return Future<T>(folly::make_unique<ErrFutureImpl<T>>(e));
-    }
-
-    // move & copy?
-    static Future<T> ok(T&& v) {
-        return Future<T>(folly::make_unique<OkFutureImpl<T>>(std::forward<T>(v)));
-    }
-
-    static Future<T> ok(const T& v) {
-        return Future<T>(folly::make_unique<OkFutureImpl<T>>(v));
-    }
-
-    template <typename F>
-    static Future<T> lazy(F&& f) {
-        typedef typename std::result_of<F()>::type R;
-        return Future<T>(folly::make_unique<LazyFutureImpl<R, F>>(std::forward<F>(f)));
-    }
-
-    template <typename F>
-    typename detail::argResult<false, F, T>::Result
-    andThen(F&& f);
-
-    template <typename F>
-    typename detail::argResult<false, F, Try<T>>::Result
-    then(F&& f);
-
-    ~Future() {
-    }
-
-    explicit Future(std::unique_ptr<FutureImpl<T>> impl)
-      : impl_(std::move(impl)) {
-      std::cerr << impl_.get() << std::endl;
-    }
-
-    Poll<T> wait();
-
-    Async<T> value() {
-      return wait().value();
-    }
-
-    Future(Future&&) = default;
-    Future& operator=(Future&&) = default;
-
-    Future(const Future&) = delete;
-    Future& operator=(const Future&) = delete;
-private:
-    std::unique_ptr<FutureImpl<T>> impl_;
-
-    Future<T> move_this() {
-      return std::move(*this);
-    }
-
-    void validFuture() {
-      if (!impl_) throw MovedFutureException();
-    }
-};
-
-template <typename A, typename F>
+template <typename FutA, typename F>
 class ChainStateMachine {
     enum class State {
         First,
@@ -180,13 +234,15 @@ class ChainStateMachine {
         Done,
     };
 public:
-    typedef typename detail::argResult<false, F, Try<A>>::Result f_result;
+    static_assert(isFuture<FutA>::value, "chain callback must be future");
+    typedef typename isFuture<FutA>::Inner AInner;
+    typedef typename detail::argResult<false, F, Try<AInner>>::Result f_result;
     static_assert(isFuture<f_result>::value, "chain callback must returns Future");
 
-    typedef typename f_result::item_type b_type;
-    typedef Try<Async<b_type>> poll_type;
+    typedef typename f_result::Item b_type;
+    typedef Poll<b_type> poll_type;
 
-    ChainStateMachine(Future<A> a, F&& fn)
+    ChainStateMachine(FutA a, F&& fn)
         : state_(State::First), a_(std::move(a)), handler_(std::move(fn)) {
     }
 
@@ -197,12 +253,12 @@ public:
                 if (p.hasValue()) {
                   auto v = folly::moveFromTry(p);
                   if (v.isReady()) {
-                    return poll_second(Try<A>(std::move(v.value())));
+                    return poll_second(Try<AInner>(std::move(v.value())));
                   } else {
                     return poll_type(Async<b_type>());
                   }
                 } else {
-                    return poll_second(Try<A>(p.exception()));
+                    return poll_second(Try<AInner>(p.exception()));
                 }
                 break;
             }
@@ -215,7 +271,7 @@ public:
     }
 
 private:
-    poll_type poll_second(Try<A>&& a_result) {
+    poll_type poll_second(Try<AInner>&& a_result) {
         state_ = State::Second;
         // TODO skip
         try {
@@ -227,37 +283,35 @@ private:
     }
 
     State state_;
-    Future<A> a_;
+    FutA a_;
     folly::Optional<f_result> b_;
     F handler_;
 };
 
-template <typename A, typename F>
-ChainStateMachine<A, F> makeChain(Future<A> &&a, F&& f) {
-    return ChainStateMachine<A, F>(std::move(a), std::forward<F>(f));
-}
-
-template <typename T, typename F, typename R>
-class ThenFutureImpl: public FutureImpl<R> {
+template <typename T, typename FutA, typename F>
+class ThenFuture: public FutureBase<ThenFuture<T, FutA, F>, T> {
 public:
-  typedef typename ChainStateMachine<T, F>::poll_type poll_type;
+  typedef T Item;
 
-  poll_type poll() override {
+  static_assert(isFuture<FutA>::value, "must be future");
+
+  Poll<T> poll() override {
     return state_.poll();
   }
 
-  ThenFutureImpl(Future<T> a, F&& f)
+  ThenFuture(FutA a, F&& f)
     : state_(std::move(a), std::move(f)) {
   }
 
 private:
-  ChainStateMachine<T, F> state_;
+  ChainStateMachine<FutA, F> state_;
 };
 
 // fused Task & Future
-template <typename T>
+template <typename Fut>
 class FutureSpawn {
 public:
+    typedef typename isFuture<Fut>::Inner T;
     typedef Try<Async<T>> poll_type;
 
     poll_type poll_future(Unpark *unpark) {
@@ -282,8 +336,8 @@ public:
         }
     }
 
-    explicit FutureSpawn(Future<T> f)
-      : id_(detail::newTaskId()), toplevel_(std::move(f)) {
+    explicit FutureSpawn(Fut fut)
+      : id_(detail::newTaskId()), toplevel_(std::move(fut)) {
     }
 
     FutureSpawn(FutureSpawn&&) = default;
@@ -291,7 +345,7 @@ public:
 private:
     // toplevel future or stream
     unsigned long id_;
-    Future<T> toplevel_;
+    Fut toplevel_;
 
     FutureSpawn(const FutureSpawn&) = delete;
     FutureSpawn& operator=(const FutureSpawn&) = delete;
@@ -299,6 +353,8 @@ private:
 
 class FutureSpawnRun : public Runnable {
 public:
+  typedef FutureSpawn<BoxedFuture<folly::Unit>> spawn_type;
+
   class Inner: public Unpark {
   public:
     Inner(Executor *exec)
@@ -344,60 +400,42 @@ public:
     }
   }
 
-  FutureSpawnRun(Executor *exec, FutureSpawn<folly::Unit> spawn)
+  FutureSpawnRun(Executor *exec, spawn_type spawn)
     : spawn_(std::move(spawn)), inner_(std::make_shared<Inner>(exec)) {
   }
 
-  FutureSpawnRun(FutureSpawn<folly::Unit> spawn, std::shared_ptr<Inner> inner)
+  FutureSpawnRun(spawn_type spawn, std::shared_ptr<Inner> inner)
     : spawn_(std::move(spawn)), inner_(inner)
   {
   }
 
 private:
-  FutureSpawn<folly::Unit> spawn_;
+  spawn_type spawn_;
   std::shared_ptr<Inner> inner_;
 
 };
 
-// Future impl
+// helper
 
 template <typename T>
-template <typename F>
-typename detail::argResult<false, F, T>::Result
-Future<T>::andThen(F&& f) {
-  typedef typename detail::argResult<false, F, T>::Result Result;
-  typedef typename isFuture<Result>::Inner R;
-  typedef std::function<Result(Try<T>)> FN;
-
-  static_assert(isFuture<Result>::value, "andThen callback must returns Future");
-  validFuture();
-  return Result(folly::make_unique<ThenFutureImpl<T, FN, R>>(move_this(),
-        [f] (Try<T> v) {
-    if (v.hasValue()) {
-      return f(moveFromTry(v));
-    } else {
-      return Result::err(v.exception());
-    }
-  }));
+OkFuture<T> makeOk(T &&v) {
+  return OkFuture<T>(std::forward<T>(v));
 }
 
 template <typename T>
-template <typename F>
-typename detail::argResult<false, F, Try<T>>::Result
-Future<T>::then(F&& f) {
-  typedef typename detail::argResult<false, F, T>::Result Result;
-  typedef typename isFuture<Result>::Inner R;
+OkFuture<T> makeOk(const T &v) {
+  return OkFuture<T>(v);
+}
 
-  validFuture();
-  return Result(folly::make_unique<ThenFutureImpl<T, F, R>>
-      (move_this(), std::forward<F>(f)));
+OkFuture<folly::Unit> makeOk() {
+  return OkFuture<folly::Unit>(folly::Unit());
 }
 
 template <typename T>
-Poll<T> Future<T>::wait() {
-  validFuture();
-  FutureSpawn<T> spawn(move_this());
-  return spawn.wait_future();
+EmptyFuture<T> makeEmpty() {
+  return EmptyFuture<T>();
 }
 
 }
+
+#include <futures/Future-inl.h>

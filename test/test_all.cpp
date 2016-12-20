@@ -7,18 +7,32 @@
 #include <futures/core/Optional.h>
 
 #include <futures/Future.h>
-#include <futures/Task.h>
+// #include <futures/Task.h>
 #include <futures/CpuPoolExecutor.h>
 
 using namespace futures;
 
+class MoveOnlyType {
+public:
+	MoveOnlyType(int v = 42): v_(v) {}
+	MoveOnlyType(const MoveOnlyType&) = delete;
+	MoveOnlyType& operator=(const MoveOnlyType&) = delete;
+
+	MoveOnlyType(MoveOnlyType&&) = default;
+	MoveOnlyType& operator=(MoveOnlyType&&) = default;
+
+	int GetV() const { return v_; }
+private:
+	int v_;
+};
+
 TEST(Future, Trait) {
-	EXPECT_FALSE(std::is_copy_constructible<Future<int>>::value);
-	EXPECT_TRUE(std::is_move_constructible<Future<int>>::value);
+	EXPECT_FALSE(std::is_copy_constructible<OkFuture<int>>::value);
+	EXPECT_TRUE(std::is_move_constructible<OkFuture<int>>::value);
 }
 
 TEST(Future, Empty) {
-	auto f = Future<int>::empty();
+	auto f = makeEmpty<int>();
 	auto p = f.poll();
 	auto &v = p.value();
 	EXPECT_EQ(v, Async<int>());
@@ -27,72 +41,68 @@ TEST(Future, Empty) {
 }
 
 TEST(Future, Err) {
-	auto f = Future<int>::err(folly::make_exception_wrapper<std::runtime_error>("bad"));
+	auto f = ErrFuture<int>(folly::make_exception_wrapper<std::runtime_error>("bad"));
 	EXPECT_TRUE(f.poll().hasException());
 }
 
 TEST(Future, Ok) {
-	auto f = Future<int>::ok(5);
+	auto f = makeOk(5);
 	auto p = f.poll();
 	EXPECT_EQ(p.value().value(), 5);
 	EXPECT_ANY_THROW(f.poll());
 }
 
-TEST(Future, Chain) {
-	auto f = Future<int>::ok(5);
-	auto chain = makeChain(std::move(f), [] (Try<int> v) {
-			return Future<int>::ok('c');
-		}
-	);
-	auto t = chain.poll();
-}
-
 TEST(Future, Move) {
-	auto f = Future<int>::ok(5);
-	auto f1 = f.andThen([] (int v) {
-			return Future<folly::Unit>::ok(folly::Unit());
+	auto f = makeOk(MoveOnlyType(42));
+	auto f1 = f.andThen([] (MoveOnlyType v) {
+			EXPECT_EQ(v.GetV(), 42);
+			return makeOk();
 	});
-	EXPECT_THROW(f.wait(), MovedFutureException);
-}
-
-TEST(Future, Chain1) {
-	auto f = Future<std::unique_ptr<int>>::ok(folly::make_unique<int>(5));
-	auto chain = makeChain(std::move(f), [] (Try<std::unique_ptr<int>> v) {
-			return Future<int>::ok('c');
-		}
-	);
-	auto t = chain.poll();
 }
 
 TEST(Future, AndThen) {
-	auto f = Future<int>::ok(5);
+	auto f = makeOk(5);
 	auto f1 = f.andThen([] (int v) {
 			std::cerr << "HERE: " << v << std::endl;
-			return Future<int>::ok(0);
+			return makeOk(0);
 	});
 	auto f2 = f1.andThen([] (int v) {
 			std::cerr << "HERE: " << v << std::endl;
-			return Future<char>::ok('a');
+			return makeOk('a');
 	});
 	auto f3 = f2.poll();
 	EXPECT_EQ(f3.value(), Async<char>('a'));
 }
+#if 1
 
 TEST(Executor, Cpu) {
 	CpuPoolExecutor exec(4);
-	Future<int> f = exec.spawn_fn([&] () {
+	auto f = exec.spawn_fn([&] () {
 			std::cerr << "Start" << std::endl;
 			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 			std::cerr << "End" << std::endl;
 			return 1;
 	});
 
-	Future<int> f1 = f.andThen([] (int v) {
-			return Future<int>::ok(v + 1);
+	auto f1 = f.andThen([] (int v) {
+			return makeOk(v + 1);
 	});
 
 	EXPECT_EQ(f1.value(), Async<int>(2));
 }
+
+TEST(Executor, CpuExcept) {
+	CpuPoolExecutor exec(4);
+	auto f = exec.spawn_fn([&] () {
+			std::cerr << "Start" << std::endl;
+			throw std::runtime_error("error");
+			return folly::Unit();
+	});
+
+	EXPECT_TRUE(f.wait().hasException());
+}
+#endif
+
 
 int main(int argc, char* argv[]) {
 	testing::InitGoogleTest(&argc, argv);

@@ -14,10 +14,13 @@ namespace futures {
 class CpuPoolExecutor;
 
 template <typename T>
-class CpuFutureImpl: public FutureImpl<T> {
+class CpuReceiveFuture: public FutureBase<CpuReceiveFuture<T>, T> {
 public:
     Poll<T> poll() override {
-        auto r = recv_.poll();
+        auto p = recv_.poll();
+        if (p.hasException())
+            return Poll<T>(p.exception());
+        auto r = folly::moveFromTry(p);
         if (r.isReady()) {
             Try<T> v = std::move(r).value();
             if (v.hasException())
@@ -29,31 +32,31 @@ public:
         }
     }
 
-    CpuFutureImpl(channel::OnshotChannel<Try<T>> recv)
-        : recv_(recv) {
+    CpuReceiveFuture(channel::OneshotChannelReceiver<Try<T>> recv)
+        : recv_(std::move(recv)) {
     }
 
 private:
-    channel::OnshotChannel<Try<T>> recv_;
-
-    friend CpuPoolExecutor;
+    channel::OneshotChannelReceiver<Try<T>> recv_;
 };
 
-template <typename T>
-class CpuFutureSenderImpl : public FutureImpl<folly::Unit> {
+template <typename Fut>
+class CpuSenderFuture : public FutureBase<CpuSenderFuture<Fut>, folly::Unit> {
 public:
-    CpuFutureSenderImpl(Future<T> fut, channel::OnshotChannel<Try<T>> sender)
+    typedef folly::Unit Item;
+    typedef typename isFuture<Fut>::Inner Data;
+    CpuSenderFuture(Fut fut, channel::OneshotChannelSender<Try<Data>> sender)
         : fut_(std::move(fut)), sender_(std::move(sender)) {
     }
 
     Poll<folly::Unit> poll() {
         auto r = fut_.poll();
         if (r.hasException()) {
-            sender_.send(Try<T>(r.exception()));
+            sender_.send(Try<Data>(r.exception()));
         } else {
             auto v = folly::moveFromTry(r);
             if (v.isReady()) {
-                sender_.send(Try<T>(std::move(v).value()));
+                sender_.send(Try<Data>(std::move(v).value()));
             } else {
                 return Poll<folly::Unit>(Async<folly::Unit>());
             }
@@ -62,8 +65,8 @@ public:
     }
 
 private:
-    Future<T> fut_;
-    channel::OnshotChannel<Try<T>> sender_;
+    Fut fut_;
+    channel::OneshotChannelSender<Try<Data>> sender_;
 };
 
 class CpuPoolExecutor : public Executor {
@@ -82,34 +85,39 @@ public:
 
     virtual void execute(std::unique_ptr<Runnable> run) override {
         std::unique_lock<std::mutex> g(mu_);
-        q_.push(run.release());
+        q_.push_back(*run.release());
         cv_.notify_one();
     }
 
-    template <typename T>
-    Future<T> spawn(Future<T> fut) {
-        channel::OnshotChannel<Try<T>> channel;
-        Future<folly::Unit> sender(folly::make_unique<CpuFutureSenderImpl<T>>(std::move(fut), channel));
+    template <typename Fut, typename R = typename isFuture<Fut>::Inner>
+    CpuReceiveFuture<R> spawn(Fut fut) {
+        // channel::OnshotChannel<Try<R>> channel;
+        auto ch = channel::makeOneshotChannel<Try<R>>();
+        CpuSenderFuture<Fut> sender(std::move(fut), std::move(ch.first));
 
-        execute(folly::make_unique<FutureSpawnRun>(this, FutureSpawn<folly::Unit>(std::move(sender))));
-        return Future<T>(folly::make_unique<CpuFutureImpl<T>>(channel));
+        execute(folly::make_unique<FutureSpawnRun>(this,
+                    FutureSpawn<BoxedFuture<folly::Unit>>(sender.boxed())));
+        return CpuReceiveFuture<R>(std::move(ch.second));
     }
 
     template <typename F,
              typename R = typename std::result_of<F()>::type>
-    Future<R> spawn_fn(F&& f) {
-        return spawn<R>(Future<R>::lazy(std::forward<F>(f)));
+    CpuReceiveFuture<R> spawn_fn(F&& f) {
+        return spawn(LazyFuture<R, F>(std::forward<F>(f)));
     }
 
 private:
     std::vector<std::thread> pool_;
-    std::queue<Runnable*> q_;
+    // std::queue<Runnable*> q_;
+    boost::intrusive::list<Runnable> q_;
     std::mutex mu_;
     std::condition_variable cv_;
 
     void shutdown() {
-        for (size_t i = 0; i < pool_.size(); ++i)
-            q_.push(nullptr);
+        for (size_t i = 0; i < pool_.size(); ++i) {
+            Runnable *r = new ShutdownRunnable();
+            q_.push_back(*r);
+        }
         cv_.notify_all();
         for (auto &e: pool_)
             e.join();
@@ -120,10 +128,14 @@ private:
             std::unique_lock<std::mutex> g(mu_);
             while (q_.empty())
                 cv_.wait(g);
-            Runnable *run = q_.front();
-            q_.pop();
+            Runnable *run = &q_.front();
+            q_.pop_front();
+            // Runnable *run = q_.front();
+            // q_.pop();
             g.unlock();
             if (!run) break;
+            if (run->type() == Runnable::SHUTDOWN)
+                break;
 
             run->run();
             delete run;

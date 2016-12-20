@@ -3,22 +3,29 @@
 // included by Future.h, do not include directly.
 #include <type_traits>
 #include <futures/core/Unit.h>
+#include <futures/core/Try.h>
 
 namespace futures {
 
-template <class> class Future;
+template <typename T>
+class IFuture;
+
+template <typename Derived, typename T>
+class FutureBase;
+
 template <class> class Promise;
 
-template <typename T>
-struct isFuture : std::false_type {
-  using Inner = typename folly::Unit::Lift<T>::type;
-  static constexpr bool value = false;
-};
+template <typename T, typename Inner>
+using isPollable = std::is_base_of<IFuture<Inner>, T>;
 
+// // template <typename T>
+// struct isFuture< : std::true_type {
+//   using Inner = typename folly::Unit::Lift<T>::type;
+// };
 template <typename T>
-struct isFuture<Future<T>> : std::true_type {
-  typedef T Inner;
-  static constexpr bool value = true;
+struct isFuture {
+  using Inner = typename folly::Unit::Lift<typename T::Item>::type;
+  static const bool value = isPollable<T, Inner>::value;
 };
 
 template <typename T>
@@ -80,8 +87,8 @@ struct callableResult {
           callableWith<F, folly::Try<T>&&>::value,
           detail::argResult<true, F, folly::Try<T>&&>,
           detail::argResult<true, F, folly::Try<T>&>>::type>::type>::type>::type Arg;
-  typedef isFuture<typename Arg::Result> ReturnsFuture;
-  typedef Future<typename ReturnsFuture::Inner> Return;
+//  typedef isFuture<typename Arg::Result> ReturnsFuture;
+//  typedef Future<typename ReturnsFuture::Inner> Return;
 };
 
 }
