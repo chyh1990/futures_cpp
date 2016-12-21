@@ -20,6 +20,7 @@
 #include <exception>
 #include <memory>
 #include <string>
+#include <futures/core/Demangle.h>
 #include <futures/core/detail/ExceptionWrapper.h>
 
 namespace folly {
@@ -186,7 +187,7 @@ class exception_wrapper {
 
   std::string what() const {
     if (item_) {
-      return std::string(typeid(item_).name()) + ":" + item_->what();
+      return demangle(typeid(item_)) + ": " + item_->what();
     } else if (eptr_) {
       return estr_;
     } else {
@@ -197,7 +198,7 @@ class exception_wrapper {
   std::string class_name() const {
     if (item_) {
       auto& i = *item_;
-      return typeid(i).name();
+      return demangle(typeid(i));
     } else if (eptr_) {
       return ename_;
     } else {

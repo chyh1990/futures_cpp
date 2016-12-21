@@ -8,7 +8,9 @@
 
 #include <futures/Future.h>
 // #include <futures/Task.h>
+#include <futures/EventExecutor.h>
 #include <futures/CpuPoolExecutor.h>
+#include <futures/TcpStream.h>
 
 using namespace futures;
 
@@ -100,6 +102,37 @@ TEST(Executor, CpuExcept) {
 	});
 
 	EXPECT_TRUE(f.wait().hasException());
+}
+
+
+TEST(Executor, Event) {
+	EventExecutor ev;
+
+	auto f = tcp::Stream::connect(ev, "127.0.0.1", 8111)
+		.andThen([&ev] (tcp::Socket s) {
+		std::cerr << "connected" << std::endl;
+		return tcp::Stream::send(ev, std::move(s), "TEST");
+	}).andThen([] (tcp::SendFutureItem s) {
+		std::cerr << "sent " << s.second << std::endl;
+		return makeOk();
+	}).then([] (Try<folly::Unit> u) {
+		if (u.hasException())
+			std::cerr << u.exception().what() << std::endl;
+		return makeOk();
+	});
+
+	ev.run(std::move(f));
+	std::cerr << "END" << std::endl;
+
+#if 0
+	Future<Socket> fd = TcpStream::connect(ev, addr);
+	fd.andThen([] (Socket s) {
+		return s.read();
+	}).andThen([] (Socket s) {
+		return s.write("HELLO", 5);
+	});
+#endif
+
 }
 #endif
 

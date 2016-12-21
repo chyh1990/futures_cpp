@@ -3,6 +3,7 @@
 #include <cassert>
 #include <atomic>
 #include <mutex>
+#include <memory>
 #include <iostream>
 #include <condition_variable>
 
@@ -52,7 +53,7 @@ class Task {
 public:
     unsigned long Id() const { return id_; }
 
-    Task(unsigned long id, Unpark *unpark):
+    Task(unsigned long id, std::shared_ptr<Unpark> unpark):
         id_(id),
         unpark_(unpark),
         data_(nullptr) {
@@ -64,7 +65,7 @@ public:
     }
 private:
     unsigned long id_;
-    Unpark *unpark_;
+    std::shared_ptr<Unpark> unpark_;
     void *data_;
 };
 

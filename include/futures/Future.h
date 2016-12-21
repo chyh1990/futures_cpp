@@ -60,6 +60,10 @@ public:
 
     FutureBase() = default;
 
+    ~FutureBase() {
+      // std::cerr << "Future destroy: " << folly::demangle(typeid(Derived)) << std::endl;
+    }
+
 #if DEBUG_FUTURE
     FutureBase(FutureBase &&o) {
       std::swap(__moved_mark, o.__moved_mark);
@@ -314,7 +318,7 @@ public:
     typedef typename isFuture<Fut>::Inner T;
     typedef Try<Async<T>> poll_type;
 
-    poll_type poll_future(Unpark *unpark) {
+    poll_type poll_future(std::shared_ptr<Unpark> unpark) {
         Task task(id_, unpark);
 
         CurrentTask::WithGuard g(CurrentTask::this_thread(), &task);
@@ -322,16 +326,16 @@ public:
     }
 
     poll_type wait_future() {
-        ThreadUnpark unpark;
+        auto unpark = std::make_shared<ThreadUnpark>();
         while (true) {
-            auto r = poll_future(&unpark);
+            auto r = poll_future(unpark);
             if (r.hasException())
                 return r;
             auto async = folly::moveFromTry(r);
             if (async.isReady()) {
                 return poll_type(std::move(async));
             } else {
-                unpark.park();
+                unpark->park();
             }
         }
     }
@@ -376,7 +380,7 @@ public:
   void run() override {
     inner_->mu_.start_poll();
     while (true) {
-      Poll<folly::Unit> p = spawn_.poll_future(inner_.get());
+      Poll<folly::Unit> p = spawn_.poll_future(inner_);
       if (p.hasException()) {
         inner_->mu_.complete();
         return;
@@ -427,7 +431,7 @@ OkFuture<T> makeOk(const T &v) {
   return OkFuture<T>(v);
 }
 
-OkFuture<folly::Unit> makeOk() {
+static inline OkFuture<folly::Unit> makeOk() {
   return OkFuture<folly::Unit>(folly::Unit());
 }
 

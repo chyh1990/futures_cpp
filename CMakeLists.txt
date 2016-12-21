@@ -7,12 +7,18 @@ CPPBUILD_ENABLE_CXX11()
 CPPBUILD_DEPEND()
 
 INCLUDE_DIRECTORIES(${futures_cpp_SOURCE_DIR}/include)
-SET(ALL_SRC src/futures_cpp.cpp)
+SET(ALL_SRC src/futures_cpp.cpp src/TcpStream.cpp src/EventExecutor.cpp)
+
+if (UNIX)
+  SET(LIBAE_SRC src/libae/ae.c src/libae/anet.c)
+endif()
+
+SET(ALL_SRC ${ALL_SRC} ${LIBAE_SRC})
 
 if(IOS)
 CPPBUILD_MANGLELIB_TARGET(futures_cpp ${ALL_SRC})
 else()
-CPPBUILD_DYNLIB_TARGET(futures_cpp ${ALL_SRC})
+CPPBUILD_LIB_TARGET(futures_cpp ${ALL_SRC})
 endif()
 CPPBUILD_INSTALL_LIB(futures_cpp)
 
