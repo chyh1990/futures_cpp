@@ -11,6 +11,7 @@
 #include <futures/EventExecutor.h>
 #include <futures/CpuPoolExecutor.h>
 #include <futures/TcpStream.h>
+#include <futures/Timer.h>
 
 using namespace futures;
 
@@ -130,15 +131,18 @@ TEST(Executor, Event) {
 	ev.run(std::move(f));
 	std::cerr << "END" << std::endl;
 
-#if 0
-	Future<Socket> fd = TcpStream::connect(ev, addr);
-	fd.andThen([] (Socket s) {
-		return s.read();
-	}).andThen([] (Socket s) {
-		return s.write("HELLO", 5);
-	});
-#endif
+}
 
+TEST(Executor, Timer) {
+	EventExecutor ev;
+	auto f = TimerFuture(ev, 1)
+		.andThen([&ev] (std::error_code _ec) {
+			std::cerr << "DONE" << std::endl;
+			return makeOk();
+		});
+
+	ev.run(std::move(f));
+	std::cerr << "END" << std::endl;
 }
 #endif
 

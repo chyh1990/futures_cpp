@@ -1,6 +1,5 @@
 #pragma once
 
-#include <system_error>
 #include <futures/core/IOBuf.h>
 #include <futures/Future.h>
 #include <futures/EventLoop.h>

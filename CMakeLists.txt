@@ -7,8 +7,7 @@ CPPBUILD_ENABLE_CXX11()
 CPPBUILD_DEPEND()
 
 INCLUDE_DIRECTORIES(${futures_cpp_SOURCE_DIR}/include)
-SET(ALL_SRC src/futures_cpp.cpp src/TcpStream.cpp
-  src/IOBuf.cpp)
+AUX_SOURCE_DIRECTORY(src ALL_SRC)
 
 if (UNIX)
   SET(LIBAE_SRC src/libae/anet.c)
