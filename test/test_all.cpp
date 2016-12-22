@@ -109,9 +109,15 @@ TEST(Executor, Event) {
 	EventExecutor ev;
 
 	auto f = tcp::Stream::connect(ev, "127.0.0.1", 8111)
-		.andThen([&ev] (tcp::Socket s) {
+	.andThen([&ev] (tcp::Socket s) {
 		std::cerr << "connected" << std::endl;
-		return tcp::Stream::send(ev, std::move(s), "TEST");
+		return tcp::Stream::recv(ev, std::move(s), 32);
+	}).andThen([&ev] (tcp::RecvFutureItem s) {
+		auto buf = std::move(s.second);
+		buf->reserve(0, 32);
+		memcpy(buf->writableTail(), " WORLD", 6);
+		buf->append(6);
+		return tcp::Stream::send(ev, std::move(s.first), std::move(buf));
 	}).andThen([] (tcp::SendFutureItem s) {
 		std::cerr << "sent " << s.second << std::endl;
 		return makeOk();

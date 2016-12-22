@@ -4,7 +4,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 extern "C" {
-#include "libae/ae.h"
 #include "libae/anet.h"
 }
 
@@ -24,8 +23,10 @@ Socket::~Socket() {
 }
 
 void Socket::close() noexcept {
-    if (fd_ >= 0)
+    if (fd_ >= 0) {
+        std::cerr << "close " << fd_ << std::endl;
         ::close(fd_);
+    }
     fd_ = -1;
 }
 
@@ -81,6 +82,20 @@ ssize_t Socket::send(const void *buf, size_t len, int flags, std::error_code &ec
     }
 }
 
+ssize_t Socket::recv(void *buf, size_t len, int flags, std::error_code &ec)
+{
+    assert(fd_ >= 0);
+    ssize_t l = ::recv(fd_, buf, len, flags);
+    if (l == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return 0;
+        ec = current_system_error();
+        return 0;
+    } else {
+        return l;
+    }
+}
+
 Poll<Socket> ConnectFuture::poll() {
     std::error_code ec;
     switch (s_) {
@@ -92,7 +107,7 @@ Poll<Socket> ConnectFuture::poll() {
                 s_ = CONNECTED;
                 return Poll<Socket>(Async<Socket>(std::move(socket_)));
             } else {
-                register_fd();
+                register_fd(EV_WRITE);
                 s_ = CONNECTING;
             }
             break;
@@ -106,7 +121,6 @@ Poll<Socket> ConnectFuture::poll() {
             if (b) {
                 unregister_fd();
                 s_ = CONNECTED;
-                std::cerr << "CONN " << std::endl;
                 return Poll<Socket>(Async<Socket>(std::move(socket_)));
                 // connected
             }
@@ -116,20 +130,19 @@ Poll<Socket> ConnectFuture::poll() {
             throw InvalidPollStateException();
     }
 
-    return Poll<Socket>(Async<Socket>());
+    return Poll<Socket>(not_ready);
 }
 
-void SocketFutureMixin::register_fd() {
+void SocketFutureMixin::register_fd(int mask) {
     if (registered_) return;
-    reactor_.getLoop().addFileEvent(socket_.fd(), AE_WRITABLE,
-            new SocketIOHandler(&reactor_.getLoop(), *CurrentTask::current_task()));
+    new SocketIOHandler(reactor_, *CurrentTask::current_task(),
+            socket_.fd(), mask);
     reactor_.incPending();
     registered_ = true;
 }
 
 void SocketFutureMixin::unregister_fd() {
     if (!registered_) return;
-    reactor_.getLoop().deleteFileEvent(socket_.fd(), AE_WRITABLE);
     reactor_.decPending();
     registered_ = false;
 }
@@ -139,12 +152,12 @@ Poll<SendFuture::Item> SendFuture::poll() {
     switch (s_) {
         case INIT: {
             // register event
-            ssize_t len = socket_.send(buf_.data(), buf_.size(), 0, ec);
+            ssize_t len = socket_.send(buf_->data(), buf_->length(), MSG_NOSIGNAL, ec);
             if (ec) {
                 unregister_fd();
                 return Poll<Item>(IOError("send", ec));
             } else if (len == 0) {
-                register_fd();
+                register_fd(EV_WRITE);
                 s_ = INIT;
             } else {
                 s_ = SENT;
@@ -157,8 +170,37 @@ Poll<SendFuture::Item> SendFuture::poll() {
             throw InvalidPollStateException();
     }
 
-    return Poll<Item>(Async<Item>());
+    return Poll<Item>(not_ready);
 }
+
+Poll<RecvFuture::Item> RecvFuture::poll() {
+    std::error_code ec;
+    switch (s_) {
+        case INIT: {
+            // register event
+            ssize_t len = socket_.recv(buf_->writableData(), length_to_read_, 0, ec);
+            if (ec) {
+                unregister_fd();
+                return Poll<Item>(IOError("recv", ec));
+            } else if (len == 0) {
+                std::cerr << "R " << std::endl;
+                register_fd(EV_READ);
+                s_ = INIT;
+            } else {
+                s_ = RECV;
+                unregister_fd();
+                buf_->append(len);
+                return Poll<Item>(Async<Item>(std::make_pair(std::move(socket_), std::move(buf_))));
+            }
+            break;
+        }
+        default:
+            throw InvalidPollStateException();
+    }
+
+    return Poll<Item>(not_ready);
+}
+
 
 
 }

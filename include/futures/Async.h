@@ -14,6 +14,11 @@ class AsyncNotReadyException : public std::runtime_error {
       : std::runtime_error("Not ready Async cannot be unwrapped") {}
 };
 
+namespace detail { struct NotReadyHelper {}; }
+
+typedef int detail::NotReadyHelper::*NotReady;
+
+const NotReady not_ready = nullptr;
 
 template <typename T>
 class Async {
@@ -30,6 +35,10 @@ public:
 
     explicit Async(const T& v) : state_(State::Ready), v_(v) {}
     explicit Async(T&& v) : state_(State::Ready), v_(std::move(v)) {}
+
+    /* implicit */ Async(const NotReady&) noexcept
+      : state_(State::NotReady) {
+    }
 
     // Move constructor
     Async(Async<T>&& t) noexcept

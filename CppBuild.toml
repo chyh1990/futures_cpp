@@ -14,3 +14,7 @@ url = "git@gitlab.bj.sensetime.com:core/googletest.git"
 [dependencies.BoostParts]
 branch = "master"
 url = "git@gitlab.bj.sensetime.com:core/BoostParts.git"
+
+[dependencies.libev]
+branch = "master"
+url = "git@gitlab.bj.sensetime.com:core/libev.git"

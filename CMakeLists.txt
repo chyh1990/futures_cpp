@@ -7,10 +7,11 @@ CPPBUILD_ENABLE_CXX11()
 CPPBUILD_DEPEND()
 
 INCLUDE_DIRECTORIES(${futures_cpp_SOURCE_DIR}/include)
-SET(ALL_SRC src/futures_cpp.cpp src/TcpStream.cpp src/EventExecutor.cpp)
+SET(ALL_SRC src/futures_cpp.cpp src/TcpStream.cpp
+  src/IOBuf.cpp)
 
 if (UNIX)
-  SET(LIBAE_SRC src/libae/ae.c src/libae/anet.c)
+  SET(LIBAE_SRC src/libae/anet.c)
 endif()
 
 SET(ALL_SRC ${ALL_SRC} ${LIBAE_SRC})

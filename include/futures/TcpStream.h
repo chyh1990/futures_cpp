@@ -1,6 +1,7 @@
 #pragma once
 
 #include <system_error>
+#include <futures/core/IOBuf.h>
 #include <futures/Future.h>
 #include <futures/EventLoop.h>
 #include <futures/EventExecutor.h>
@@ -19,6 +20,7 @@ public:
 
     void close() noexcept;
     ssize_t send(const void *buf, size_t len, int flags, std::error_code &ec);
+    ssize_t recv(void *buf, size_t len, int flags, std::error_code &ec);
 
     Socket(const Socket&) = delete;
     Socket& operator=(const Socket&) = delete;
@@ -42,14 +44,21 @@ private:
     int fd_;
 };
 
-class SocketIOHandler : public FileEventHandler {
+class SocketIOHandler {
+private:
+    ev::io io_;
+    Task task_;
+
 public:
-    SocketIOHandler(EventLoop *ev, Task task)
-        : FileEventHandler(ev), task_(task) {
+    SocketIOHandler(EventExecutor& reactor, Task task, int fd, int mask)
+        : io_(reactor.getLoop()), task_(task) {
         std::cerr << "SocketIOHandlerHERE: " << std::endl;
+        io_.set(this);
+        io_.start(fd, mask);
     }
 
-    void operator()(int fd, int mask) {
+    void operator()(ev::io &io, int revents) {
+        std::cerr << "SocketIOHandler() " << revents << std::endl;
         task_.unpark();
         delete this;
     }
@@ -57,26 +66,27 @@ public:
 protected:
     ~SocketIOHandler() {
         std::cerr << "SocketIOHandlerDelete: " << std::endl;
+        io_.stop();
     }
 
-private:
-    Task task_;
-    bool registered_ = false;
 };
 
 class SocketFutureMixin {
 public:
-    void register_fd();
+    void register_fd(int mask);
     void unregister_fd();
 
     SocketFutureMixin(EventExecutor &ev, Socket socket)
-        : reactor_(ev), socket_(std::move(socket)) {}
+        : reactor_(ev), socket_(std::move(socket)) {
+    }
+
+    // ~SocketFutureMixin() {
+    //     unregister_fd();
+    // }
 
 protected:
     EventExecutor &reactor_;
     Socket socket_;
-
-private:
     bool registered_ = false;
 };
 
@@ -114,16 +124,37 @@ public:
     };
 
     SendFuture(EventExecutor &ev, Socket socket,
-            const std::string &buf)
+            std::unique_ptr<folly::IOBuf> buf)
         : SocketFutureMixin(ev, std::move(socket)), s_(INIT),
-        buf_(buf) {}
+        buf_(std::move(buf)) {}
 
     Poll<Item> poll();
 
 private:
     State s_;
-    std::string buf_;
+    std::unique_ptr<folly::IOBuf> buf_;
+};
 
+typedef std::pair<Socket, std::unique_ptr<folly::IOBuf>> RecvFutureItem;
+class RecvFuture : public FutureBase<RecvFuture, RecvFutureItem>, SocketFutureMixin {
+public:
+    typedef RecvFutureItem Item;
+
+    enum State {
+        INIT,
+        RECV,
+    };
+
+    RecvFuture(EventExecutor &ev, Socket socket, size_t length)
+        : SocketFutureMixin(ev, std::move(socket)), s_(INIT),
+        buf_(folly::IOBuf::create(length)), length_to_read_(length) {}
+
+    Poll<Item> poll();
+
+private:
+    State s_;
+    std::unique_ptr<folly::IOBuf> buf_;
+    ssize_t length_to_read_;
 };
 
 class Stream {
@@ -135,10 +166,17 @@ public:
     }
 
     static SendFuture send(EventExecutor &reactor,
-            Socket socket, const std::string &buf)
+            Socket socket, std::unique_ptr<folly::IOBuf> buf)
     {
-        return SendFuture(reactor, std::move(socket), buf);
+        return SendFuture(reactor, std::move(socket), std::move(buf));
     }
+
+    static RecvFuture recv(EventExecutor &reactor,
+            Socket socket, size_t length)
+    {
+        return RecvFuture(reactor, std::move(socket), length);
+    }
+
 };
 
 }

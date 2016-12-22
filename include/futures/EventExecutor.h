@@ -9,10 +9,12 @@ namespace futures {
 
 class EventExecutor : public Executor {
 public:
-    EventExecutor();
-    ~EventExecutor();
+    EventExecutor() {}
+    ~EventExecutor() {}
 
-    void execute(std::unique_ptr<Runnable> run);
+    void execute(std::unique_ptr<Runnable> run) {
+        q_.push_back(*run.release());
+    }
 
     template <typename Fut>
     void run(Fut fut) {
@@ -27,12 +29,12 @@ public:
             if (!pending_)
                 break;
             std::cerr << "START POLL" << std::endl;
-            loop_->pollOnce();
+            loop_.run(EVRUN_ONCE);
             std::cerr << "END POLL" << std::endl;
         }
     }
 
-    EventLoop &getLoop() { return *loop_; }
+    ev::dynamic_loop &getLoop() { return loop_; }
 
     void incPending() { pending_++; }
     void decPending() {
@@ -40,7 +42,7 @@ public:
         pending_--;
     }
 private:
-    EventLoop *loop_;
+    ev::dynamic_loop loop_;
     int64_t pending_;
     boost::intrusive::list<Runnable> q_;
 };

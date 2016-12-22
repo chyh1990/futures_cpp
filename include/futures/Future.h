@@ -105,6 +105,12 @@ public:
     BoxedFuture(std::unique_ptr<IFuture<T>> f)
         : impl_(std::move(f)) {}
 
+    ~BoxedFuture() {
+      if (impl_)
+        std::cerr << "BOX DESTRY" << std::endl;
+    }
+    BoxedFuture(BoxedFuture&&) = default;
+    BoxedFuture& operator=(BoxedFuture&&) = default;
 private:
     std::unique_ptr<IFuture<T>> impl_;
 
@@ -203,7 +209,7 @@ public:
       if (try_.hasException()) {
         return Poll<Item>(try_.exception());
       } else {
-        return folly::moveFromTry(try_).poll();
+        return try_->poll();
       }
     }
 
@@ -370,6 +376,10 @@ public:
       if (res.hasValue()) {
         exec_->execute(std::move(res).value());
       }
+    }
+
+    ~Inner() {
+      std::cerr << "INNER DES" << std::endl;
     }
 
     Executor *exec_;
