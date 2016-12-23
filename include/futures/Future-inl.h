@@ -36,4 +36,11 @@ BoxedFuture<T> FutureBase<Derived, T>::boxed() {
   return BoxedFuture<T>(std::move(p));
 }
 
+template <typename Derived, typename T>
+SharedFuture<T> FutureBase<Derived, T>::shared() {
+  std::unique_ptr<IFuture<T>> p(new Derived(move_self()));
+  return SharedFuture<T>(std::move(p));
+}
+
+
 }

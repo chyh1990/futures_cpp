@@ -63,6 +63,14 @@ TEST(Future, Move) {
 	});
 }
 
+TEST(Future, Shared) {
+	auto f = makeOk(42).shared();
+	auto f1 = f;
+
+	bool b = std::is_copy_constructible<SharedFuture<int>>::value;
+	EXPECT_TRUE(b);
+}
+
 TEST(Future, AndThen) {
 	auto f = makeOk(5);
 	auto f1 = f.andThen([] (int v) {
@@ -76,6 +84,15 @@ TEST(Future, AndThen) {
 	auto f3 = f2.poll();
 	EXPECT_EQ(f3.value(), Async<char>('a'));
 }
+
+TEST(Future, Select) {
+	auto f1 = makeOk(1);
+	auto f2 = makeOk(2);
+	auto f = makeSelect(std::move(f1), std::move(f2));
+
+	f.wait();
+}
+
 #if 1
 
 TEST(Executor, Cpu) {
@@ -144,6 +161,23 @@ TEST(Executor, Timer) {
 	ev.run(std::move(f));
 	std::cerr << "END" << std::endl;
 }
+
+
+TEST(Future, Timeout) {
+	EventExecutor ev;
+
+	auto f = makeEmpty<int>();
+
+	auto f1 = timeout(ev, std::move(f), 1.0)
+		.then([] (Try<int> v) {
+			if (v.hasException())
+				std::cerr << "ERROR" << std::endl;
+			return makeOk();
+		});
+
+	ev.run(std::move(f1));
+}
+
 #endif
 
 

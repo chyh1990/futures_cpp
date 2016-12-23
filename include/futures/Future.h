@@ -19,11 +19,13 @@ template <typename T>
 class IFuture {
 public:
     virtual Poll<T> poll() = 0;
+    virtual void cancel() {}
     virtual ~IFuture() = default;
 };
 
 template <typename T, typename FutA, typename F> class ThenFuture;
 template <typename T> class BoxedFuture;
+template <typename T> class SharedFuture;
 // future or error
 template <typename FutT> class MaybeFuture;
 
@@ -33,7 +35,8 @@ public:
     typedef T Item;
 
     Poll<T> poll() override {
-        return derived().poll();
+        // return derived().poll();
+        assert(0 && "cannot call base poll");
     }
 
     template <typename F,
@@ -48,6 +51,7 @@ public:
     ThenFuture<R, Derived, F> then(F&& f);
 
     BoxedFuture<T> boxed();
+    SharedFuture<T> shared();
 
     Poll<T> wait();
 
@@ -102,7 +106,12 @@ public:
         return impl_->poll();
     }
 
-    BoxedFuture(std::unique_ptr<IFuture<T>> f)
+    void cancel() {
+        validFuture();
+        return impl_->cancel();
+    }
+
+    explicit BoxedFuture(std::unique_ptr<IFuture<T>> f)
         : impl_(std::move(f)) {}
 
     ~BoxedFuture() {
@@ -117,6 +126,57 @@ private:
     void validFuture() {
       if (!impl_) throw MovedFutureException();
     }
+};
+
+template <typename T>
+class SharedFuture : public FutureBase<SharedFuture<T>, T> {
+public:
+    typedef T Item;
+    typedef std::unique_ptr<IFuture<T>> fptr;
+
+    // TODO use finer grain lock
+    struct Inner {
+      std::mutex mu;
+      fptr impl;
+
+      Inner(fptr f): impl(std::move(f)) {}
+    };
+
+    // TODO optimized out allocation
+    explicit SharedFuture(fptr impl)
+      : inner_(std::make_shared<Inner>(std::move(impl))) {}
+
+    SharedFuture(const SharedFuture& o)
+      : inner_(o.inner_) {
+#ifdef DEBUG_FUTURE
+      __moved_mark = o.__moved_mark;
+#endif
+    }
+    SharedFuture& operator=(const SharedFuture& o) {
+#ifdef DEBUG_FUTURE
+      __moved_mark = o.__moved_mark;
+#endif
+      inner_ = o.inner;
+      return *this;
+    }
+
+    // TODO allow polling from multiple source
+    Poll<Item> poll() {
+      if (!inner_) throw InvalidPollStateException();
+      std::lock_guard<std::mutex> g(inner_->mu);
+      return inner_->impl->poll();
+    }
+
+    void cancel() {
+      if (!inner_) throw InvalidPollStateException();
+      std::lock_guard<std::mutex> g(inner_->mu);
+      return inner_->impl->cancel();
+    }
+
+    SharedFuture(SharedFuture&&) = default;
+    SharedFuture& operator=(SharedFuture&&) = default;
+private:
+    std::shared_ptr<Inner> inner_;
 };
 
 template <typename T>
@@ -453,3 +513,4 @@ EmptyFuture<T> makeEmpty() {
 }
 
 #include <futures/Future-inl.h>
+#include <futures/detail/SelectFuture.h>
