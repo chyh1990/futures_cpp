@@ -47,24 +47,25 @@ class SocketIOHandler {
 private:
     ev::io io_;
     Task task_;
+    EventExecutor &reactor_;
 
 public:
     SocketIOHandler(EventExecutor& reactor, Task task, int fd, int mask)
-        : io_(reactor.getLoop()), task_(task) {
+        : io_(reactor.getLoop()), task_(task), reactor_(reactor) {
         std::cerr << "SocketIOHandlerHERE: " << std::endl;
         io_.set(this);
+        reactor_.incPending();
         io_.start(fd, mask);
     }
 
     void operator()(ev::io &io, int revents) {
         std::cerr << "SocketIOHandler() " << revents << std::endl;
         task_.unpark();
-        delete this;
     }
 
-protected:
     ~SocketIOHandler() {
         std::cerr << "SocketIOHandlerDelete: " << std::endl;
+        reactor_.decPending();
         io_.stop();
     }
 
@@ -86,7 +87,7 @@ public:
 protected:
     EventExecutor &reactor_;
     Socket socket_;
-    bool registered_ = false;
+    std::unique_ptr<SocketIOHandler> handler_;
 };
 
 class ConnectFuture : public FutureBase<ConnectFuture, Socket>, SocketFutureMixin {

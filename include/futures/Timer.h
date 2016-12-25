@@ -18,7 +18,6 @@ public:
         timer_.set(this);
         reactor_.incPending();
         timer_.start(ts);
-        timer_.remaining();
     }
 
     bool hasTimeout() {
@@ -82,11 +81,15 @@ public:
 
     Poll<Item> poll() {
         auto ra = timer_.poll();
-        if (ra.hasException())
+        if (ra.hasException()) {
+            f_.cancel();
             return Poll<Item>(ra.exception());
+        }
         auto va = folly::moveFromTry(ra);
-        if (va.isReady())
+        if (va.isReady()) {
+            f_.cancel();
             return Poll<Item>(TimeoutException());
+        }
         auto rb = f_.poll();
         if (rb.hasException())
             return Poll<Item>(rb.exception());

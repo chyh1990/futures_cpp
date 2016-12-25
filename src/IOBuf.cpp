@@ -18,6 +18,7 @@
 #define __STDC_LIMIT_MACROS
 #endif
 
+#include <cstddef>
 #include <futures/core/IOBuf.h>
 #include <futures/core/Memory.h>
 
@@ -117,7 +118,7 @@ struct IOBuf::HeapFullStorage {
 
   HeapStorage hs;
   SharedInfo shared;
-  std::max_align_t align;
+  max_align_t align;
 };
 
 IOBuf::SharedInfo::SharedInfo()

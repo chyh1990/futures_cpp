@@ -1,10 +1,12 @@
 
 #include <gtest/gtest.h>
 #include <futures_cpp.h>
+#include <boost/variant.hpp>
 
 #include <futures/core/ExceptionWrapper.h>
 #include <futures/core/Try.h>
 #include <futures/core/Optional.h>
+#include <futures/core/Either.h>
 
 #include <futures/Future.h>
 // #include <futures/Task.h>
@@ -177,6 +179,40 @@ TEST(Future, Timeout) {
 
 	ev.run(std::move(f1));
 }
+
+TEST(Either, NotSame)
+{
+	folly::Either<int, double> e1(folly::left_tag, 1);
+	folly::Either<std::string, double> e2(folly::left_tag, std::string("AAA"));
+	EXPECT_EQ(e2.left(), "AAA");
+	auto e3 = e2;
+	EXPECT_EQ(e3, e2);
+	EXPECT_EQ(e3.left(), "AAA");
+	auto e4 = std::move(e3);
+	EXPECT_EQ(e4.left(), "AAA");
+	EXPECT_FALSE(e3.hasRight());
+	EXPECT_FALSE(e3.hasLeft());
+	EXPECT_TRUE(e4.hasLeft());
+
+	e4.assignRight(5.0);
+	EXPECT_TRUE(e4.hasRight());
+	EXPECT_NE(e4, e2);
+
+	auto e10 = folly::make_left<std::string, int>("XX");
+	EXPECT_EQ(e10.left(), "XX");
+	auto e11 = folly::make_right<int, std::string>("XX");
+	EXPECT_EQ(e11.right(), "XX");
+
+	auto e12 = folly::make_left<MoveOnlyType, std::string>(MoveOnlyType(4));
+	EXPECT_EQ(e12.left().GetV(), 4);
+
+}
+
+TEST(Either, Same)
+{
+	folly::Either<int, int> e1(folly::left_tag, 1);
+}
+
 
 #endif
 

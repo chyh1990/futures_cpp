@@ -135,17 +135,13 @@ Poll<Socket> ConnectFuture::poll() {
 }
 
 void SocketFutureMixin::register_fd(int mask) {
-    if (registered_) return;
-    new SocketIOHandler(reactor_, *CurrentTask::current_task(),
-            socket_.fd(), mask);
-    reactor_.incPending();
-    registered_ = true;
+    if (handler_) return;
+    handler_.reset(new SocketIOHandler(reactor_, *CurrentTask::current_task(),
+            socket_.fd(), mask));
 }
 
 void SocketFutureMixin::unregister_fd() {
-    if (!registered_) return;
-    reactor_.decPending();
-    registered_ = false;
+    handler_.reset();
 }
 
 Poll<SendFuture::Item> SendFuture::poll() {
