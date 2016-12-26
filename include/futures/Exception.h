@@ -22,4 +22,10 @@ public:
     : std::runtime_error("Future cancelled") {}
 };
 
+class FutureEmptySetException: public std::runtime_error {
+public:
+  FutureEmptySetException()
+    : std::runtime_error("Future empty") {}
+};
+
 }

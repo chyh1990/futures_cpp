@@ -20,12 +20,14 @@ public:
     void run(Fut fut) {
         execute(folly::make_unique<FutureSpawnRun>(this,
                     FutureSpawn<BoxedFuture<folly::Unit>>(fut.boxed())));
-        while (!q_.empty()) {
-            std::cerr << "QSIZE: " << q_.size() << std::endl;
-            Runnable *run = &q_.front();
-            q_.pop_front();
-            run->run();
-            delete run;
+        while (true) {
+            if (!q_.empty()) {
+                std::cerr << "QSIZE: " << q_.size() << std::endl;
+                Runnable *run = &q_.front();
+                q_.pop_front();
+                run->run();
+                delete run;
+            }
             if (!pending_)
                 break;
             std::cerr << "START POLL" << std::endl;
@@ -43,7 +45,7 @@ public:
     }
 private:
     ev::dynamic_loop loop_;
-    int64_t pending_;
+    int64_t pending_ = 0;
     boost::intrusive::list<Runnable> q_;
 };
 

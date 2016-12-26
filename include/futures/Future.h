@@ -5,6 +5,7 @@
 #include <futures/core/Memory.h>
 #include <futures/core/Try.h>
 #include <futures/core/Optional.h>
+#include <futures/core/ApplyTuple.h>
 
 #include <futures/Exception.h>
 #include <futures/Async.h>
@@ -29,10 +30,15 @@ template <typename T> class SharedFuture;
 // future or error
 template <typename FutT> class MaybeFuture;
 
+template <typename T, typename F>
+struct AndThenWrapper;
+template <typename T, typename F>
+struct AndThenWrapper2;
+
 template <typename Derived, typename T>
 class FutureBase : public IFuture<T> {
 public:
-    typedef T Item;
+    using Item = T;
 
     Poll<T> poll() override {
         // return derived().poll();
@@ -42,8 +48,14 @@ public:
     template <typename F,
               typename FutR = typename std::result_of<F(T)>::type,
               typename R = typename isFuture<FutR>::Inner,
-              typename FN = std::function<MaybeFuture<FutR>(Try<T>)> >
-    ThenFuture<R, Derived, FN> andThen(F&& f);
+              typename Wrapper = AndThenWrapper<T, F>>
+    ThenFuture<R, Derived, Wrapper> andThen(F&& f);
+
+    template <typename F,
+              typename FutR = decltype(folly::applyTuple(std::declval<F>(), std::declval<T>())),
+              typename R = typename isFuture<FutR>::Inner,
+              typename Wrapper = AndThenWrapper2<T, F>>
+    ThenFuture<R, Derived, Wrapper> andThen2(F&& f);
 
     template <typename F,
               typename R = typename isFuture<
@@ -99,7 +111,7 @@ private:
 template <typename T>
 class BoxedFuture : public FutureBase<BoxedFuture<T>, T> {
 public:
-    typedef T Item;
+    using Item = T;
 
     Poll<T> poll() {
         validFuture();
@@ -111,12 +123,15 @@ public:
         return impl_->cancel();
     }
 
+    void clear() { impl_.reset(); }
+    bool isValid() { return impl_ != nullptr; }
+
     explicit BoxedFuture(std::unique_ptr<IFuture<T>> f)
         : impl_(std::move(f)) {}
 
     ~BoxedFuture() {
       if (impl_)
-        std::cerr << "BOX DESTRY" << std::endl;
+        std::cerr << "BOX DESTROY" << std::endl;
     }
     BoxedFuture(BoxedFuture&&) = default;
     BoxedFuture& operator=(BoxedFuture&&) = default;
@@ -131,7 +146,7 @@ private:
 template <typename T>
 class SharedFuture : public FutureBase<SharedFuture<T>, T> {
 public:
-    typedef T Item;
+    using Item = T;
     typedef std::unique_ptr<IFuture<T>> fptr;
 
     // TODO use finer grain lock
@@ -182,7 +197,7 @@ private:
 template <typename T>
 class EmptyFuture : public FutureBase<EmptyFuture<T>, T> {
 public:
-    typedef T Item;
+    using Item = T;
     Poll<T> poll() override {
         return Poll<T>(Async<T>());
     }
@@ -191,7 +206,7 @@ public:
 template <typename T>
 class ErrFuture : public FutureBase<ErrFuture<T>, T> {
 public:
-    typedef T Item;
+    using Item = T;
     Poll<T> poll() override {
         if (consumed_)
             throw InvalidPollStateException();
@@ -210,7 +225,7 @@ private:
 template <typename T>
 class OkFuture : public FutureBase<OkFuture<T>, T> {
 public:
-    typedef T Item;
+    using Item = T;
     Poll<T> poll() override {
         if (consumed_)
             throw InvalidPollStateException();
@@ -234,7 +249,7 @@ private:
 template <typename T>
 class ResultFuture: public FutureBase<ResultFuture<T>, T> {
 public:
-    typedef T Item;
+    using Item = T;
 
     ResultFuture(Try<T> &&t)
       : try_(std::move(t)) {
@@ -255,7 +270,7 @@ private:
 template <typename FutA>
 class MaybeFuture: public FutureBase<MaybeFuture<FutA>, typename isFuture<FutA>::Inner> {
 public:
-    typedef typename isFuture<FutA>::Inner Item;
+    using Item = typename isFuture<FutA>::Inner;
 
     explicit MaybeFuture(FutA fut)
       : try_(std::move(fut)) {
@@ -281,7 +296,7 @@ private:
 template <typename T, typename F>
 class LazyFuture: public FutureBase<LazyFuture<T, F>, T> {
 public:
-    typedef T Item;
+    using Item = T;
     LazyFuture(F &&fn)
       : fn_(std::move(fn)) {}
 
@@ -305,12 +320,12 @@ class ChainStateMachine {
     };
 public:
     static_assert(isFuture<FutA>::value, "chain callback must be future");
-    typedef typename isFuture<FutA>::Inner AInner;
-    typedef typename detail::argResult<false, F, Try<AInner>>::Result f_result;
+    using AInner = typename isFuture<FutA>::Inner;
+    using f_result = typename detail::argResult<false, F, Try<AInner>>::Result;
     static_assert(isFuture<f_result>::value, "chain callback must returns Future");
 
-    typedef typename f_result::Item b_type;
-    typedef Poll<b_type> poll_type;
+    using b_type = typename f_result::Item;
+    using poll_type = Poll<b_type>;
 
     ChainStateMachine(FutA a, F&& fn)
         : state_(State::First), a_(std::move(a)), handler_(std::move(fn)) {
@@ -361,7 +376,7 @@ private:
 template <typename T, typename FutA, typename F>
 class ThenFuture: public FutureBase<ThenFuture<T, FutA, F>, T> {
 public:
-  typedef T Item;
+  using Item = T;
 
   static_assert(isFuture<FutA>::value, "must be future");
 
@@ -381,7 +396,7 @@ private:
 template <typename Fut>
 class FutureSpawn {
 public:
-    typedef typename isFuture<Fut>::Inner T;
+    using T = typename isFuture<Fut>::Inner;
     typedef Try<Async<T>> poll_type;
 
     poll_type poll_future(std::shared_ptr<Unpark> unpark) {
@@ -423,7 +438,7 @@ private:
 
 class FutureSpawnRun : public Runnable {
 public:
-  typedef FutureSpawn<BoxedFuture<folly::Unit>> spawn_type;
+  using spawn_type = FutureSpawn<BoxedFuture<folly::Unit>>;
 
   class Inner: public Unpark {
   public:
@@ -439,7 +454,7 @@ public:
     }
 
     ~Inner() {
-      std::cerr << "INNER DES" << std::endl;
+      std::cerr << "FutureSpawn INNER DESTROY" << std::endl;
     }
 
     Executor *exec_;
@@ -514,3 +529,4 @@ EmptyFuture<T> makeEmpty() {
 
 #include <futures/Future-inl.h>
 #include <futures/detail/SelectFuture.h>
+#include <futures/detail/WhenAllFuture.h>

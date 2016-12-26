@@ -96,11 +96,13 @@ public:
         INIT,
         CONNECTING,
         CONNECTED,
+        CANCELLED,
     };
 
     typedef Socket Item;
 
-    Poll<Socket> poll();
+    Poll<Socket> poll() override;
+    void cancel() override;
 
     ConnectFuture(EventExecutor &ev,
         const std::string addr, uint16_t port)
@@ -113,7 +115,7 @@ private:
     uint16_t port_;
 };
 
-typedef std::pair<Socket, ssize_t> SendFutureItem;
+typedef std::tuple<Socket, ssize_t> SendFutureItem;
 class SendFuture : public FutureBase<SendFuture, SendFutureItem>, SocketFutureMixin {
 public:
     typedef SendFutureItem Item;
@@ -121,6 +123,7 @@ public:
     enum State {
         INIT,
         SENT,
+        CANCELLED,
     };
 
     SendFuture(EventExecutor &ev, Socket socket,
@@ -128,14 +131,15 @@ public:
         : SocketFutureMixin(ev, std::move(socket)), s_(INIT),
         buf_(std::move(buf)) {}
 
-    Poll<Item> poll();
+    Poll<Item> poll() override;
+    void cancel() override;
 
 private:
     State s_;
     std::unique_ptr<folly::IOBuf> buf_;
 };
 
-typedef std::pair<Socket, std::unique_ptr<folly::IOBuf>> RecvFutureItem;
+typedef std::tuple<Socket, std::unique_ptr<folly::IOBuf>> RecvFutureItem;
 class RecvFuture : public FutureBase<RecvFuture, RecvFutureItem>, SocketFutureMixin {
 public:
     typedef RecvFutureItem Item;
@@ -143,13 +147,15 @@ public:
     enum State {
         INIT,
         RECV,
+        CANCELLED,
     };
 
     RecvFuture(EventExecutor &ev, Socket socket, size_t length)
         : SocketFutureMixin(ev, std::move(socket)), s_(INIT),
         buf_(folly::IOBuf::create(length)), length_to_read_(length) {}
 
-    Poll<Item> poll();
+    Poll<Item> poll() override;
+    void cancel() override;
 
 private:
     State s_;

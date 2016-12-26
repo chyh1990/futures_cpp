@@ -127,11 +127,18 @@ Poll<Socket> ConnectFuture::poll() {
             }
             break;
         }
+        case CANCELLED:
+            return Poll<Socket>(FutureCancelledException());
         default:
             throw InvalidPollStateException();
     }
 
     return Poll<Socket>(not_ready);
+}
+
+void ConnectFuture::cancel() {
+    handler_.reset();
+    s_ = CANCELLED;
 }
 
 void SocketFutureMixin::register_fd(int mask) {
@@ -159,15 +166,22 @@ Poll<SendFuture::Item> SendFuture::poll() {
             } else {
                 s_ = SENT;
                 unregister_fd();
-                return Poll<Item>(Async<Item>(std::make_pair(std::move(socket_), len)));
+                return Poll<Item>(Async<Item>(std::make_tuple(std::move(socket_), len)));
             }
             break;
         }
+        case CANCELLED:
+            return Poll<Item>(FutureCancelledException());
         default:
             throw InvalidPollStateException();
     }
 
     return Poll<Item>(not_ready);
+}
+
+void SendFuture::cancel() {
+    handler_.reset();
+    s_ = CANCELLED;
 }
 
 Poll<RecvFuture::Item> RecvFuture::poll() {
@@ -187,10 +201,12 @@ Poll<RecvFuture::Item> RecvFuture::poll() {
                 s_ = RECV;
                 unregister_fd();
                 buf_->append(len);
-                return Poll<Item>(Async<Item>(std::make_pair(std::move(socket_), std::move(buf_))));
+                return Poll<Item>(Async<Item>(std::make_tuple(std::move(socket_), std::move(buf_))));
             }
             break;
         }
+        case CANCELLED:
+            return Poll<Item>(FutureCancelledException());
         default:
             throw InvalidPollStateException();
     }
@@ -198,6 +214,10 @@ Poll<RecvFuture::Item> RecvFuture::poll() {
     return Poll<Item>(not_ready);
 }
 
+void RecvFuture::cancel() {
+    handler_.reset();
+    s_ = CANCELLED;
+}
 
 
 }

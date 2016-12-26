@@ -7,6 +7,7 @@
 #include <futures/core/Try.h>
 #include <futures/core/Optional.h>
 #include <futures/core/Either.h>
+#include <futures/core/ApplyTuple.h>
 
 #include <futures/Future.h>
 // #include <futures/Task.h>
@@ -132,14 +133,13 @@ TEST(Executor, Event) {
 	.andThen([&ev] (tcp::Socket s) {
 		std::cerr << "connected" << std::endl;
 		return tcp::Stream::recv(ev, std::move(s), 32);
-	}).andThen([&ev] (tcp::RecvFutureItem s) {
-		auto buf = std::move(s.second);
+	}).andThen2([&ev] (tcp::Socket s, std::unique_ptr<folly::IOBuf> buf) {
 		buf->reserve(0, 32);
 		memcpy(buf->writableTail(), " WORLD", 6);
 		buf->append(6);
-		return tcp::Stream::send(ev, std::move(s.first), std::move(buf));
-	}).andThen([] (tcp::SendFutureItem s) {
-		std::cerr << "sent " << s.second << std::endl;
+		return tcp::Stream::send(ev, std::move(s), std::move(buf));
+	}).andThen2([] (tcp::Socket s, size_t size) {
+		std::cerr << "sent " << size << std::endl;
 		return makeOk();
 	}).then([] (Try<folly::Unit> u) {
 		if (u.hasException())
@@ -180,6 +180,58 @@ TEST(Future, Timeout) {
 	ev.run(std::move(f1));
 }
 
+TEST(Future, AllTimeout) {
+	EventExecutor ev;
+
+	std::vector<BoxedFuture<int>> f;
+	f.emplace_back(TimerFuture(ev, 1.0)
+		.then([] (Try<std::error_code> v) {
+			if (v.hasException())
+				std::cerr << "ERROR" << std::endl;
+			else
+				std::cerr << "Timer1 done" << std::endl;
+			return makeOk(1);
+		}).boxed());
+	f.emplace_back(TimerFuture(ev, 2.0)
+		.then([] (Try<std::error_code> v) {
+			if (v.hasException())
+				std::cerr << "ERROR" << std::endl;
+			else
+				std::cerr << "Timer2 done" << std::endl;
+			return makeOk(2);
+		}).boxed());
+	auto all = whenAll(f.begin(), f.end())
+		.andThen([] (std::vector<int> ids) {
+		std::cerr << "done" << std::endl;
+		return makeOk();
+	});
+
+	ev.run(std::move(all));
+}
+
+BoxedFuture<std::vector<int>> rwait(EventExecutor &ev, std::vector<int> &v, int n) {
+	if (n == 0)
+		return makeOk(std::move(v)).boxed();
+	return TimerFuture(ev, 0.1).andThen(
+			[&ev, &v, n] (std::error_code) {
+				v.push_back(n);
+				return rwait(ev, v, n - 1);
+			}
+	).boxed();
+}
+
+TEST(Future, RecursiveTimer) {
+	EventExecutor ev;
+	std::vector<int> idxes;
+	auto w10 = rwait(ev, idxes, 10)
+		.andThen([] (std::vector<int> idxes) {
+				for (auto e: idxes)
+					std::cerr << e << std::endl;
+				return makeOk();
+		});
+	ev.run(std::move(w10));
+}
+
 TEST(Either, NotSame)
 {
 	folly::Either<int, double> e1(folly::left_tag, 1);
@@ -215,6 +267,23 @@ TEST(Either, Same)
 
 
 #endif
+
+TEST(Functional, apply) {
+	auto f1 = [] (int a) { return a + 1; };
+	auto f2 = [] (int a, double b) { return a + b; };
+	auto r1 = folly::apply(f1, 1);
+	EXPECT_EQ(r1, 2);
+	auto t = std::make_tuple(1, 1.0);
+	auto r2 = folly::applyTuple(f2, t);
+	EXPECT_EQ(r2, 2.0);
+
+	auto f3 = [] (MoveOnlyType v, int k) { return MoveOnlyType(v.GetV() + k); };
+	auto r3 = folly::apply(f3, MoveOnlyType(2), 1);
+	EXPECT_EQ(r3.GetV(), 3);
+
+	auto r3_1 = folly::applyTuple(f3, std::make_tuple(MoveOnlyType(2), 1));
+	EXPECT_EQ(r3_1.GetV(), 3);
+}
 
 
 int main(int argc, char* argv[]) {

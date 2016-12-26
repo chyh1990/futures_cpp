@@ -4,18 +4,55 @@ namespace futures {
 
 // Future impl
 
-template <typename Derived, typename T>
-template <typename F, typename FutR,
-          typename R, typename FN>
-ThenFuture<R, Derived, FN> FutureBase<Derived, T>::andThen(F&& f) {
-  static_assert(isFuture<FutR>::value, "andThen callback must returns Future");
-  return ThenFuture<R, Derived, FN>(move_self(), [f] (Try<T> v) {
+template <typename T, typename F>
+struct AndThenWrapper {
+  using FutR = typename std::result_of<F(T)>::type;
+  AndThenWrapper(F&& f)
+    : func_(std::forward<F>(f)) {
+  }
+
+  MaybeFuture<FutR> operator()(Try<T> v) {
     if (v.hasValue()) {
-      return MaybeFuture<FutR>(f(moveFromTry(v)));
+      return MaybeFuture<FutR>(func_(moveFromTry(v)));
     } else {
       return MaybeFuture<FutR>(v.exception());
     }
-  });
+  }
+  F func_;
+};
+
+template <typename T, typename F>
+struct AndThenWrapper2 {
+  using FutR = decltype(folly::applyTuple(std::declval<F>(), std::declval<T>()));
+  AndThenWrapper2(F&& f)
+    : func_(std::forward<F>(f)) {
+  }
+
+  MaybeFuture<FutR> operator()(Try<T> v) {
+    if (v.hasValue()) {
+      return MaybeFuture<FutR>(folly::applyTuple(func_, folly::moveFromTry(v)));
+    } else {
+      return MaybeFuture<FutR>(v.exception());
+    }
+  }
+  F func_;
+};
+
+
+template <typename Derived, typename T>
+template <typename F, typename FutR,
+          typename R, typename Wrapper>
+ThenFuture<R, Derived, Wrapper> FutureBase<Derived, T>::andThen(F&& f) {
+  static_assert(isFuture<FutR>::value, "andThen callback must returns Future");
+  return ThenFuture<R, Derived, Wrapper>(move_self(), Wrapper(std::forward<F>(f)));
+}
+
+template <typename Derived, typename T>
+template <typename F, typename FutR,
+          typename R, typename Wrapper>
+ThenFuture<R, Derived, Wrapper> FutureBase<Derived, T>::andThen2(F&& f) {
+  static_assert(isFuture<FutR>::value, "andThen2 callback must returns Future");
+  return ThenFuture<R, Derived, Wrapper>(move_self(), Wrapper(std::forward<F>(f)));
 }
 
 template <typename Derived, typename T>
