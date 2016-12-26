@@ -58,7 +58,6 @@ bool Socket::is_connected(std::error_code &ec)
         ec = current_system_error();
         return false;
     }
-    std::cerr << "OPT " << result << std::endl;
     if (result == 0) {
         return true;
     } else if(result == EINPROGRESS) {
@@ -195,7 +194,6 @@ Poll<RecvFutureItem> RecvFuture<ReadPolicy>::poll() {
                 unregister_fd();
                 return Poll<Item>(IOError("recv", ec));
             } else if (len == 0) {
-                std::cerr << "R " << std::endl;
                 register_fd(EV_READ);
                 s_ = INIT;
             } else {

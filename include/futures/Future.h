@@ -2,11 +2,8 @@
 
 #include <memory>
 #include <iostream>
-#include <futures/core/Memory.h>
-#include <futures/core/Try.h>
-#include <futures/core/Optional.h>
-#include <futures/core/ApplyTuple.h>
 
+#include <futures/Core.h>
 #include <futures/Exception.h>
 #include <futures/Async.h>
 #include <futures/Executor.h>
@@ -25,6 +22,7 @@ public:
 };
 
 template <typename T, typename FutA, typename F> class ThenFuture;
+template <typename FutA, typename FutB> class JoinFuture;
 template <typename T> class BoxedFuture;
 template <typename T> class SharedFuture;
 // future or error
@@ -61,6 +59,9 @@ public:
               typename R = typename isFuture<
                 typename std::result_of<F(Try<T>)>::type>::Inner>
     ThenFuture<R, Derived, F> then(F&& f);
+
+    template <typename FutB>
+    JoinFuture<Derived, FutB> join(FutB&& f);
 
     BoxedFuture<T> boxed();
     SharedFuture<T> shared();
@@ -309,87 +310,6 @@ public:
     }
 private:
   F fn_;
-};
-
-template <typename FutA, typename F>
-class ChainStateMachine {
-    enum class State {
-        First,
-        Second,
-        Done,
-    };
-public:
-    static_assert(isFuture<FutA>::value, "chain callback must be future");
-    using AInner = typename isFuture<FutA>::Inner;
-    using f_result = typename detail::argResult<false, F, Try<AInner>>::Result;
-    static_assert(isFuture<f_result>::value, "chain callback must returns Future");
-
-    using b_type = typename f_result::Item;
-    using poll_type = Poll<b_type>;
-
-    ChainStateMachine(FutA a, F&& fn)
-        : state_(State::First), a_(std::move(a)), handler_(std::move(fn)) {
-    }
-
-    poll_type poll() {
-        switch (state_) {
-            case State::First: {
-                auto p = a_.poll();
-                if (p.hasValue()) {
-                  auto v = folly::moveFromTry(p);
-                  if (v.isReady()) {
-                    return poll_second(Try<AInner>(std::move(v.value())));
-                  } else {
-                    return poll_type(Async<b_type>());
-                  }
-                } else {
-                    return poll_second(Try<AInner>(p.exception()));
-                }
-                break;
-            }
-            case State::Second:
-                return b_->poll();
-            default:
-                throw InvalidPollStateException();
-        }
-        // state_ = State::Second;
-    }
-
-private:
-    poll_type poll_second(Try<AInner>&& a_result) {
-        state_ = State::Second;
-        // TODO skip
-        try {
-          b_ = handler_(std::move(a_result));
-          return b_->poll();
-        } catch (const std::exception &e) {
-          return poll_type(folly::exception_wrapper(std::current_exception(), e));
-        }
-    }
-
-    State state_;
-    FutA a_;
-    folly::Optional<f_result> b_;
-    F handler_;
-};
-
-template <typename T, typename FutA, typename F>
-class ThenFuture: public FutureBase<ThenFuture<T, FutA, F>, T> {
-public:
-  using Item = T;
-
-  static_assert(isFuture<FutA>::value, "must be future");
-
-  Poll<T> poll() override {
-    return state_.poll();
-  }
-
-  ThenFuture(FutA a, F&& f)
-    : state_(std::move(a), std::move(f)) {
-  }
-
-private:
-  ChainStateMachine<FutA, F> state_;
 };
 
 // fused Task & Future

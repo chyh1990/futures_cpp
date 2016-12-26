@@ -88,6 +88,15 @@ TEST(Future, AndThen) {
 	EXPECT_EQ(f3.value(), Async<char>('a'));
 }
 
+TEST(Future, Join) {
+	auto f = makeOk(1).join(makeOk(std::string("3")))
+		.andThen2([] (int a, std::string b) {
+			return makeOk(std::to_string(a) + b);
+		});
+	auto r = f.poll();
+	EXPECT_EQ(r.value(), Async<std::string>("13"));
+}
+
 TEST(Future, Select) {
 	auto f1 = makeOk(1);
 	auto f2 = makeOk(2);
