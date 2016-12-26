@@ -139,8 +139,54 @@ private:
     std::unique_ptr<folly::IOBuf> buf_;
 };
 
+class TransferAtLeast {
+public:
+    TransferAtLeast(ssize_t length, ssize_t buf_size)
+        : length_(length), buf_size_(buf_size) {
+        assert(length > 0);
+        assert(buf_size >= length);
+    }
+
+    TransferAtLeast(ssize_t length)
+        : length_(length), buf_size_(length * 2) {
+        assert(length >= 0);
+    }
+
+    size_t bufferSize() const {
+        return buf_size_;
+    }
+
+    size_t remainBufferSize() const {
+        assert(buf_size_ >= read_);
+        return buf_size_ - read_;
+    }
+
+    // mark readed
+    bool read(ssize_t s) {
+        assert(s >= 0);
+        read_ += s;
+        if (read_ >= length_)
+            return true;
+        return false;
+    }
+
+private:
+    const ssize_t length_;
+    const ssize_t buf_size_;
+    ssize_t read_ = 0;
+};
+
+class TransferExactly : public TransferAtLeast {
+public:
+    TransferExactly(ssize_t size)
+        : TransferAtLeast(size, size) {}
+};
+
 typedef std::tuple<Socket, std::unique_ptr<folly::IOBuf>> RecvFutureItem;
-class RecvFuture : public FutureBase<RecvFuture, RecvFutureItem>, SocketFutureMixin {
+template <class ReadPolicy>
+class RecvFuture
+    : public FutureBase<RecvFuture<ReadPolicy>, RecvFutureItem>,
+             SocketFutureMixin {
 public:
     typedef RecvFutureItem Item;
 
@@ -150,17 +196,19 @@ public:
         CANCELLED,
     };
 
-    RecvFuture(EventExecutor &ev, Socket socket, size_t length)
+    RecvFuture(EventExecutor &ev, Socket socket, const ReadPolicy& policy)
         : SocketFutureMixin(ev, std::move(socket)), s_(INIT),
-        buf_(folly::IOBuf::create(length)), length_to_read_(length) {}
+        policy_(policy),
+        buf_(folly::IOBuf::create(policy_.bufferSize())) {}
 
     Poll<Item> poll() override;
     void cancel() override;
 
 private:
     State s_;
+    ReadPolicy policy_;
     std::unique_ptr<folly::IOBuf> buf_;
-    ssize_t length_to_read_;
+    // ssize_t length_to_read_;
 };
 
 class Stream {
@@ -177,10 +225,11 @@ public:
         return SendFuture(reactor, std::move(socket), std::move(buf));
     }
 
-    static RecvFuture recv(EventExecutor &reactor,
-            Socket socket, size_t length)
+    template <class ReadPolicy>
+    static RecvFuture<ReadPolicy> recv(EventExecutor &reactor,
+            Socket socket, ReadPolicy&& policy)
     {
-        return RecvFuture(reactor, std::move(socket), length);
+        return RecvFuture<ReadPolicy>(reactor, std::move(socket), std::forward<ReadPolicy>(policy));
     }
 
 };

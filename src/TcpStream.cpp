@@ -184,12 +184,13 @@ void SendFuture::cancel() {
     s_ = CANCELLED;
 }
 
-Poll<RecvFuture::Item> RecvFuture::poll() {
+template <class ReadPolicy>
+Poll<RecvFutureItem> RecvFuture<ReadPolicy>::poll() {
     std::error_code ec;
     switch (s_) {
         case INIT: {
             // register event
-            ssize_t len = socket_.recv(buf_->writableData(), length_to_read_, 0, ec);
+            ssize_t len = socket_.recv(buf_->writableTail(), policy_.remainBufferSize(), 0, ec);
             if (ec) {
                 unregister_fd();
                 return Poll<Item>(IOError("recv", ec));
@@ -198,10 +199,14 @@ Poll<RecvFuture::Item> RecvFuture::poll() {
                 register_fd(EV_READ);
                 s_ = INIT;
             } else {
-                s_ = RECV;
-                unregister_fd();
                 buf_->append(len);
-                return Poll<Item>(Async<Item>(std::make_tuple(std::move(socket_), std::move(buf_))));
+                if (policy_.read(len)) {
+                    s_ = RECV;
+                    unregister_fd();
+                    return Poll<Item>(Async<Item>(std::make_tuple(std::move(socket_), std::move(buf_))));
+                } else {
+                    s_ = INIT;
+                }
             }
             break;
         }
@@ -214,10 +219,14 @@ Poll<RecvFuture::Item> RecvFuture::poll() {
     return Poll<Item>(not_ready);
 }
 
-void RecvFuture::cancel() {
+template <typename ReadPolicy>
+void RecvFuture<ReadPolicy>::cancel() {
     handler_.reset();
     s_ = CANCELLED;
 }
+
+template class RecvFuture<TransferAtLeast>;
+template class RecvFuture<TransferExactly>;
 
 
 }

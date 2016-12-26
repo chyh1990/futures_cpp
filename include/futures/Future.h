@@ -511,11 +511,6 @@ OkFuture<T> makeOk(T &&v) {
   return OkFuture<T>(std::forward<T>(v));
 }
 
-template <typename T>
-OkFuture<T> makeOk(const T &v) {
-  return OkFuture<T>(v);
-}
-
 static inline OkFuture<folly::Unit> makeOk() {
   return OkFuture<folly::Unit>(folly::Unit());
 }

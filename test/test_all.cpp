@@ -132,11 +132,11 @@ TEST(Executor, Event) {
 	auto f = tcp::Stream::connect(ev, "127.0.0.1", 8111)
 	.andThen([&ev] (tcp::Socket s) {
 		std::cerr << "connected" << std::endl;
-		return tcp::Stream::recv(ev, std::move(s), 32);
+		return tcp::Stream::recv(ev, std::move(s), tcp::TransferExactly(32));
 	}).andThen2([&ev] (tcp::Socket s, std::unique_ptr<folly::IOBuf> buf) {
 		buf->reserve(0, 32);
-		memcpy(buf->writableTail(), " WORLD", 6);
-		buf->append(6);
+		memcpy(buf->writableTail(), " WORLD\n", 7);
+		buf->append(7);
 		return tcp::Stream::send(ev, std::move(s), std::move(buf));
 	}).andThen2([] (tcp::Socket s, size_t size) {
 		std::cerr << "sent " << size << std::endl;
@@ -212,12 +212,12 @@ TEST(Future, AllTimeout) {
 BoxedFuture<std::vector<int>> rwait(EventExecutor &ev, std::vector<int> &v, int n) {
 	if (n == 0)
 		return makeOk(std::move(v)).boxed();
-	return TimerFuture(ev, 0.1).andThen(
+	return TimerFuture(ev, 0.1)
+		.andThen(
 			[&ev, &v, n] (std::error_code) {
 				v.push_back(n);
 				return rwait(ev, v, n - 1);
-			}
-	).boxed();
+			}).boxed();
 }
 
 TEST(Future, RecursiveTimer) {
