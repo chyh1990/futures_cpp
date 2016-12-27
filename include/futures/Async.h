@@ -123,6 +123,9 @@ public:
         return std::move(v_);
     }
 
+    const T* operator->() const { return &value(); }
+    T* operator->() { return &value(); }
+
 private:
     void require_ready() const {
         if (state_ != State::Ready)
@@ -135,5 +138,11 @@ private:
 
 template <typename T>
 using Poll = Try<Async<T>>;
+
+template <typename T,
+         typename T0 = typename std::remove_reference<T>::type>
+Poll<T0> makePollReady(T&& v) {
+  return Poll<T0>(Async<T0>(std::forward<T>(v)));
+}
 
 }

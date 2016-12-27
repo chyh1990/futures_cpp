@@ -1,13 +1,9 @@
 
 #include <gtest/gtest.h>
 #include <futures_cpp.h>
-#include <boost/variant.hpp>
 
-#include <futures/core/ExceptionWrapper.h>
-#include <futures/core/Try.h>
-#include <futures/core/Optional.h>
+#include <futures/Core.h>
 #include <futures/core/Either.h>
-#include <futures/core/ApplyTuple.h>
 
 #include <futures/Future.h>
 // #include <futures/Task.h>
@@ -156,7 +152,8 @@ TEST(Executor, Event) {
 		return makeOk();
 	});
 
-	ev.run(std::move(f));
+	ev.spawn(std::move(f));
+	ev.run();
 	std::cerr << "END" << std::endl;
 
 }
@@ -169,7 +166,8 @@ TEST(Executor, Timer) {
 			return makeOk();
 		});
 
-	ev.run(std::move(f));
+	ev.spawn(std::move(f));
+	ev.run();
 	std::cerr << "END" << std::endl;
 }
 
@@ -186,7 +184,8 @@ TEST(Future, Timeout) {
 			return makeOk();
 		});
 
-	ev.run(std::move(f1));
+	ev.spawn(std::move(f1));
+	ev.run();
 }
 
 TEST(Future, AllTimeout) {
@@ -215,7 +214,8 @@ TEST(Future, AllTimeout) {
 		return makeOk();
 	});
 
-	ev.run(std::move(all));
+	ev.spawn(std::move(all));
+	ev.run();
 }
 
 BoxedFuture<std::vector<int>> rwait(EventExecutor &ev, std::vector<int> &v, int n) {
@@ -238,7 +238,8 @@ TEST(Future, RecursiveTimer) {
 					std::cerr << e << std::endl;
 				return makeOk();
 		});
-	ev.run(std::move(w10));
+	ev.spawn(std::move(w10));
+	ev.run();
 }
 
 TEST(Either, NotSame)

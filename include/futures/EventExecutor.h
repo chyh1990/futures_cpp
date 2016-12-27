@@ -17,11 +17,14 @@ public:
     }
 
     template <typename Fut>
-    void run(Fut fut) {
+    void spawn(Fut&& fut) {
         execute(folly::make_unique<FutureSpawnRun>(this,
                     FutureSpawn<BoxedFuture<folly::Unit>>(fut.boxed())));
+    }
+
+    void run() {
         while (true) {
-            if (!q_.empty()) {
+            while (!q_.empty()) {
                 std::cerr << "QSIZE: " << q_.size() << std::endl;
                 Runnable *run = &q_.front();
                 q_.pop_front();

@@ -44,7 +44,7 @@ public:
     }
 
     template <typename F,
-              typename FutR = typename std::result_of<F(T)>::type,
+              typename FutR = detail::resultOf<F, T>,
               typename R = typename isFuture<FutR>::Inner,
               typename Wrapper = AndThenWrapper<T, F>>
     ThenFuture<R, Derived, Wrapper> andThen(F&& f);
@@ -57,7 +57,7 @@ public:
 
     template <typename F,
               typename R = typename isFuture<
-                typename std::result_of<F(Try<T>)>::type>::Inner>
+                detail::resultOf<F,Try<T>> >::Inner>
     ThenFuture<R, Derived, F> then(F&& f);
 
     template <typename FutB>
@@ -76,10 +76,7 @@ public:
     FutureBase& operator=(const FutureBase &) = delete;
 
     FutureBase() = default;
-
-    ~FutureBase() {
-      // std::cerr << "Future destroy: " << folly::demangle(typeid(Derived)) << std::endl;
-    }
+    ~FutureBase() = default;
 
 #if DEBUG_FUTURE
     FutureBase(FutureBase &&o) {
@@ -93,7 +90,7 @@ public:
     FutureBase(FutureBase &&) = default;
     FutureBase& operator=(FutureBase &&) = default;
 #endif
-private:
+protected:
 
 #if DEBUG_FUTURE
     bool __moved_mark = false;
@@ -134,6 +131,13 @@ public:
       if (impl_)
         std::cerr << "BOX DESTROY" << std::endl;
     }
+
+    // override should be safe
+    BoxedFuture<T> boxed() {
+      std::cerr << "DOUBLE BOXED" << std::endl;
+      return BoxedFuture<T>(std::move(impl_));
+    }
+
     BoxedFuture(BoxedFuture&&) = default;
     BoxedFuture& operator=(BoxedFuture&&) = default;
 private:
@@ -289,6 +293,12 @@ public:
       }
     }
 
+    void cancel() override {
+      if (!try_.hasException()) {
+        try_->cancel();
+      }
+    }
+
 private:
     Try<FutA> try_;
 };
@@ -302,13 +312,20 @@ public:
       : fn_(std::move(fn)) {}
 
     Poll<T> poll() override {
+      if (cancelled_)
+        return Poll<T>(FutureCancelledException());
       try {
         return Poll<T>(Async<T>(fn_()));
       } catch (const std::exception &e) {
         return Poll<T>(folly::exception_wrapper(std::current_exception(), e));
       }
     }
+
+    void cancel() override {
+      cancelled_ = true;
+    }
 private:
+  bool cancelled_ = false;
   F fn_;
 };
 

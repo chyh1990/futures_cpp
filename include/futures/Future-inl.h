@@ -19,7 +19,7 @@ public:
     using b_type = typename f_result::Item;
     using poll_type = Poll<b_type>;
 
-    ChainStateMachine(FutA a, F&& fn)
+    ChainStateMachine(FutA&& a, F&& fn)
         : state_(State::First), a_(std::move(a)), handler_(std::move(fn)) {
     }
 
@@ -76,7 +76,7 @@ public:
     return state_.poll();
   }
 
-  ThenFuture(FutA a, F&& f)
+  ThenFuture(FutA&& a, F&& f)
     : state_(std::move(a), std::move(f)) {
   }
 
@@ -97,7 +97,7 @@ public:
   using AInner = typename isFuture<FutA>::Inner;
   using BInner = typename isFuture<FutB>::Inner;
 
-  JoinFuture(FutA fa, FutB fb)
+  JoinFuture(FutA&& fa, FutB&& fb)
     : fa_(std::move(fa)), fb_(std::move(fb)) {
   }
 

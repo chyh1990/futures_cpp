@@ -2,8 +2,7 @@
 
 // included by Future.h, do not include directly.
 #include <type_traits>
-#include <futures/core/Unit.h>
-#include <futures/core/Try.h>
+#include <futures/Core.h>
 
 namespace futures {
 
@@ -28,29 +27,7 @@ struct isFuture {
   static const bool value = isPollable<T, Inner>::value;
 };
 
-template <typename T>
-struct isTry : std::false_type {};
-
-template <typename T>
-struct isTry<folly::Try<T>> : std::true_type {};
-
 namespace detail {
-
-template<typename F, typename... Args>
-using resultOf = decltype(std::declval<F>()(std::declval<Args>()...));
-
-template <typename...>
-struct ArgType;
-
-template <typename Arg, typename... Args>
-struct ArgType<Arg, Args...> {
-  typedef Arg FirstArg;
-};
-
-template <>
-struct ArgType<> {
-  typedef void FirstArg;
-};
 
 template <bool isTry, typename F, typename... Args>
 struct argResult {

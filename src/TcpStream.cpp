@@ -71,10 +71,13 @@ bool Socket::is_connected(std::error_code &ec)
 ssize_t Socket::send(const void *buf, size_t len, int flags, std::error_code &ec)
 {
     assert(fd_ >= 0);
+again:
     ssize_t sent = ::send(fd_, buf, len, flags);
     if (sent == -1) {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             return 0;
+        if (errno == EINTR)
+            goto again;
         ec = current_system_error();
         return 0;
     } else {
@@ -85,14 +88,62 @@ ssize_t Socket::send(const void *buf, size_t len, int flags, std::error_code &ec
 ssize_t Socket::recv(void *buf, size_t len, int flags, std::error_code &ec)
 {
     assert(fd_ >= 0);
+again:
     ssize_t l = ::recv(fd_, buf, len, flags);
     if (l == -1) {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             return 0;
+        if (errno == EINTR)
+            goto again;
         ec = current_system_error();
         return 0;
     } else {
         return l;
+    }
+}
+
+void Socket::tcpServer(const std::string& bindaddr, uint16_t port,
+        int backlog, std::error_code &ec) {
+    assert(fd_ < 0);
+
+    char buf[ANET_ERR_LEN];
+    char addr_buf[256];
+    if (bindaddr.size() > 255) {
+        ec = std::make_error_code(std::errc::invalid_argument);
+        return;
+    }
+
+    strcpy(addr_buf, bindaddr.c_str());
+    int fd = anetTcpServer(buf, port, addr_buf, backlog);
+    if (fd < 0) {
+        ec = current_system_error();
+        return;
+    }
+    fd_ = fd;
+    if (anetNonBlock(buf, fd_)) {
+        close();
+        ec = current_system_error();
+        return;
+    }
+}
+
+Socket Socket::accept(std::error_code& ec) {
+    struct sockaddr_storage sa;
+    socklen_t salen = sizeof(sa);
+    int fd;
+again:
+    fd = ::accept(fd_, (struct sockaddr*)&sa, &salen);
+    if (fd == -1) {
+        if (errno == EINTR) {
+            goto again;
+        } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return Socket();
+        } else {
+            ec = current_system_error();
+            return Socket();
+        }
+    } else {
+        return Socket(fd);
     }
 }
 
@@ -226,6 +277,31 @@ void RecvFuture<ReadPolicy>::cancel() {
 template class RecvFuture<TransferAtLeast>;
 template class RecvFuture<TransferExactly>;
 
+Poll<Optional<Socket>> AcceptStream::poll() {
+    switch (s_) {
+    case INIT:
+        handler_.reset(new SocketIOHandler(ev_,
+            *CurrentTask::current_task(),
+            socket_.fd(), EV_READ));
+        s_ = ACCEPTING;
+        // fall through
+    case ACCEPTING: {
+        // libev is level-triggered, just need to accept once
+        std::error_code ec;
+        Socket s = socket_.accept(ec);
+        if (ec) {
+            handler_.reset();
+            return Poll<Optional<Socket>>(IOError("accept", ec));
+        }
+        if (s.isValid())
+            return makePollReady(folly::make_optional(std::move(s)));
+        break;
+    }
+    default:
+        throw InvalidPollStateException();
+    }
+    return Poll<Optional<Item>>(not_ready);
+}
 
 }
 }

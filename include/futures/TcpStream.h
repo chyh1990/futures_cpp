@@ -2,6 +2,7 @@
 
 #include <futures/core/IOBuf.h>
 #include <futures/Future.h>
+#include <futures/Stream.h>
 #include <futures/EventLoop.h>
 #include <futures/EventExecutor.h>
 
@@ -12,14 +13,19 @@ namespace tcp {
 class Socket {
 public:
     Socket();
+    // take ownership
+    Socket(int fd) : fd_(fd) {}
     ~Socket();
 
     bool connect(const std::string &addr, uint16_t port, std::error_code &ec) ;
     bool is_connected(std::error_code &ec);
 
+    void tcpServer(const std::string& bindaddr, uint16_t port, int backlog, std::error_code &ec);
+
     void close() noexcept;
     ssize_t send(const void *buf, size_t len, int flags, std::error_code &ec);
     ssize_t recv(void *buf, size_t len, int flags, std::error_code &ec);
+    Socket accept(std::error_code& ec);
 
     Socket(const Socket&) = delete;
     Socket& operator=(const Socket&) = delete;
@@ -39,6 +45,7 @@ public:
     }
 
     int fd() const { return fd_; }
+    bool isValid() const { return fd_ >= 0; }
 private:
     int fd_;
 };
@@ -211,6 +218,27 @@ private:
     // ssize_t length_to_read_;
 };
 
+class AcceptStream : public StreamBase<AcceptStream, Socket> {
+public:
+    enum State {
+        INIT,
+        ACCEPTING,
+        CLOSED,
+    };
+
+    using Item = Socket;
+
+    Poll<Optional<Item>> poll() override;
+
+    AcceptStream(EventExecutor &ev, Socket& s)
+        : ev_(ev), socket_(s) {}
+private:
+    State s_ = INIT;
+    EventExecutor &ev_;
+    Socket &socket_;
+    std::unique_ptr<SocketIOHandler> handler_;
+};
+
 class Stream {
 public:
     static ConnectFuture connect(EventExecutor &reactor,
@@ -225,6 +253,10 @@ public:
         return SendFuture(reactor, std::move(socket), std::move(buf));
     }
 
+    static AcceptStream acceptStream(EventExecutor &reactor, Socket &listener) {
+        return AcceptStream(reactor, listener);
+    }
+
     template <class ReadPolicy>
     static RecvFuture<ReadPolicy> recv(EventExecutor &reactor,
             Socket socket, ReadPolicy&& policy)
@@ -233,6 +265,7 @@ public:
     }
 
 };
+
 
 }
 }

@@ -108,4 +108,10 @@ TimeoutFuture<Fut> timeout(EventExecutor& ev, Fut &&f, double after) {
     return TimeoutFuture<Fut>(ev, std::forward<Fut>(f), after);
 }
 
+inline TimerFuture delay(EventExecutor& ev, double after) {
+    return TimerFuture(ev, after);
+}
+
+
+
 }
