@@ -41,6 +41,7 @@ public:
             boost::intrusive::constant_time_size<true>> EventList;
 
     virtual void cleanup(int reason) = 0;
+    virtual ~EventWatcherBase() = default;
 };
 
 }

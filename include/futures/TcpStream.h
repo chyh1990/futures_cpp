@@ -257,7 +257,8 @@ public:
         return SendFuture(reactor, std::move(socket), std::move(buf));
     }
 
-    static AcceptStream acceptStream(EventExecutor &reactor, Socket &listener) {
+    static AcceptStream acceptStream(EventExecutor &reactor, Socket &listener)
+    {
         return AcceptStream(reactor, listener);
     }
 

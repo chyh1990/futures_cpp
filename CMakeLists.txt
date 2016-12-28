@@ -22,4 +22,6 @@ CPPBUILD_LIB_TARGET(futures_cpp ${ALL_SRC})
 endif()
 CPPBUILD_INSTALL_LIB(futures_cpp)
 
+CPPBUILD_APP_TARGET(ex_socket examples/socket.cpp)
+
 CPPBUILD_UNITTEST()
