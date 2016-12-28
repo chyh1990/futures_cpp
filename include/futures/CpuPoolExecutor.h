@@ -71,7 +71,8 @@ private:
 
 class CpuPoolExecutor : public Executor {
 public:
-    CpuPoolExecutor(size_t num_threads) {
+    CpuPoolExecutor(size_t num_threads)
+        : is_running_(true) {
         for (size_t i = 0; i < num_threads; ++i) {
             pool_.push_back(std::thread([this] {
                 worker();
@@ -80,13 +81,19 @@ public:
     }
 
     virtual ~CpuPoolExecutor() {
-        shutdown();
+        stop();
     }
 
-    virtual void execute(std::unique_ptr<Runnable> run) override {
+    void execute(std::unique_ptr<Runnable> run) override {
         std::unique_lock<std::mutex> g(mu_);
+        // XXX dropping the run is enough?
+        if (!is_running_) return;
         q_.push_back(*run.release());
         cv_.notify_one();
+    }
+
+    void stop() override {
+        shutdown();
     }
 
     template <typename Fut, typename R = typename isFuture<Fut>::Inner>
@@ -112,13 +119,19 @@ private:
     boost::intrusive::list<Runnable> q_;
     std::mutex mu_;
     std::condition_variable cv_;
+    bool is_running_;
 
     void shutdown() {
+        std::unique_lock<std::mutex> g(mu_);
+        if (!is_running_) return;
+        is_running_ = false;
         for (size_t i = 0; i < pool_.size(); ++i) {
             Runnable *r = new ShutdownRunnable();
             q_.push_back(*r);
         }
         cv_.notify_all();
+        g.unlock();
+
         for (auto &e: pool_)
             e.join();
     }
@@ -126,8 +139,9 @@ private:
     void worker() {
         while (true) {
             std::unique_lock<std::mutex> g(mu_);
-            while (q_.empty())
+            while (q_.empty()) {
                 cv_.wait(g);
+            }
             Runnable *run = &q_.front();
             q_.pop_front();
             // Runnable *run = q_.front();

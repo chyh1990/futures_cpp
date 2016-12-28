@@ -34,6 +34,8 @@ public:
 class Executor {
 public:
     virtual void execute(std::unique_ptr<Runnable> run) = 0;
+    virtual void stop() = 0;
+
     virtual ~Executor() = default;
     Executor() {}
 private:

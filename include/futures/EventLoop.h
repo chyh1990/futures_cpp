@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <system_error>
 #include <cassert>
+#include <boost/intrusive/list.hpp>
 #include <ev++.h>
 
 namespace futures {
@@ -25,6 +26,21 @@ public:
     IOError(const std::string &what, const std::error_code& ec)
         : EventException(what + ": " + std::to_string(ec.value()) + "-" + ec.message()) {
     }
+};
+
+class EventWatcherBase
+{
+public:
+    boost::intrusive::list_member_hook<> event_hook_;
+
+    typedef boost::intrusive::member_hook<EventWatcherBase,
+            boost::intrusive::list_member_hook<>,
+            &EventWatcherBase::event_hook_> MemberHookOption;
+
+    typedef boost::intrusive::list<EventWatcherBase, MemberHookOption,
+            boost::intrusive::constant_time_size<true>> EventList;
+
+    virtual void cleanup(int reason) = 0;
 };
 
 }

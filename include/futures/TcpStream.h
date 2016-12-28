@@ -50,7 +50,7 @@ private:
     int fd_;
 };
 
-class SocketIOHandler {
+class SocketIOHandler : public EventWatcherBase {
 private:
     ev::io io_;
     Task task_;
@@ -61,7 +61,7 @@ public:
         : io_(reactor.getLoop()), task_(task), reactor_(reactor) {
         std::cerr << "SocketIOHandlerHERE: " << std::endl;
         io_.set(this);
-        reactor_.incPending();
+        reactor_.linkWatcher(this);
         io_.start(fd, mask);
     }
 
@@ -70,9 +70,13 @@ public:
         task_.unpark();
     }
 
+    void cleanup(int reason) override {
+        task_.unpark();
+    }
+
     ~SocketIOHandler() {
         std::cerr << "SocketIOHandlerDelete: " << std::endl;
-        reactor_.decPending();
+        reactor_.unlinkWatcher(this);
         io_.stop();
     }
 

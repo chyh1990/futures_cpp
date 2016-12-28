@@ -5,7 +5,7 @@
 
 namespace futures {
 
-class TimerIOHandler {
+class TimerIOHandler : public EventWatcherBase {
 private:
     ev::timer timer_;
     Task task_;
@@ -16,7 +16,7 @@ public:
         : timer_(reactor.getLoop()), task_(task), reactor_(reactor) {
         std::cerr << "TimerHandlerHERE: " << std::endl;
         timer_.set(this);
-        reactor_.incPending();
+        reactor_.linkWatcher(this);
         timer_.start(ts);
     }
 
@@ -29,9 +29,13 @@ public:
         task_.unpark();
     }
 
+    void cleanup(int reason) override {
+        task_.unpark();
+    }
+
     ~TimerIOHandler() {
         std::cerr << "TimerHandlerStop: " << std::endl;
-        reactor_.decPending();
+        reactor_.unlinkWatcher(this);
         timer_.stop();
     }
 };

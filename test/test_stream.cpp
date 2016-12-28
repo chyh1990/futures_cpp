@@ -28,7 +28,8 @@ static BoxedFuture<folly::Unit> process(EventExecutor &ev, tcp::Socket client) {
             return tcp::Stream::send(ev, c.move(),
                     folly::IOBuf::copyBuffer("TEST\n", 5, 0, 0));
         })
-        .then([] (Try<tcp::SendFutureItem> s) {
+        .then([&ev] (Try<tcp::SendFutureItem> s) {
+            ev.stop();
             return makeOk();
         }).boxed();
     // detail::resultOf<decltype(f), int>;
