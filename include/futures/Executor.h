@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <boost/intrusive/list.hpp>
+#include <futures/detail/ThreadLocalData.h>
 
 namespace futures {
 
@@ -41,6 +42,11 @@ public:
 private:
     Executor(const Executor&) = delete;
     Executor& operator=(const Executor&) = delete;
+};
+
+class CurrentExecutor: public ThreadLocalData<CurrentExecutor, Executor> {
+public:
+    using WithGuard = ThreadLocalData<CurrentExecutor, Executor>::WithGuard;
 };
 
 }

@@ -25,7 +25,7 @@ Socket::~Socket() {
 
 void Socket::close() noexcept {
     if (fd_ >= 0) {
-        std::cerr << "close " << fd_ << std::endl;
+        FUTURES_DLOG(INFO) << "close fd: " << fd_;
         ::close(fd_);
     }
     fd_ = -1;
@@ -97,6 +97,10 @@ again:
             goto again;
         ec = current_system_error();
         return 0;
+    } else if (l == 0) {
+        // closed by peer
+        ec = std::make_error_code(std::errc::connection_aborted);
+        return 0;
     } else {
         return l;
     }
@@ -143,6 +147,12 @@ again:
             return Socket();
         }
     } else {
+        char buf[ANET_ERR_LEN];
+        if (anetNonBlock(buf, fd)) {
+            ec = current_system_error();
+            ::close(fd);
+            return Socket();
+        }
         return Socket(fd);
     }
 }
@@ -158,7 +168,7 @@ Poll<Socket> ConnectFuture::poll() {
                 s_ = CONNECTED;
                 return Poll<Socket>(Async<Socket>(std::move(socket_)));
             } else {
-                register_fd(EV_WRITE);
+                register_fd(ev::WRITE);
                 s_ = CONNECTING;
             }
             break;
@@ -211,7 +221,7 @@ Poll<SendFuture::Item> SendFuture::poll() {
                 unregister_fd();
                 return Poll<Item>(IOError("send", ec));
             } else if (len == 0) {
-                register_fd(EV_WRITE);
+                register_fd(ev::WRITE);
                 s_ = INIT;
             } else {
                 s_ = SENT;
@@ -241,16 +251,17 @@ Poll<RecvFutureItem> RecvFuture<ReadPolicy>::poll() {
         case INIT: {
             // register event
             ssize_t len = socket_.recv(buf_->writableTail(), policy_.remainBufferSize(), 0, ec);
+            FUTURES_DLOG(INFO) << "S " << socket_.fd() << ", LEN " << len;
             if (ec) {
                 unregister_fd();
                 return Poll<Item>(IOError("recv", ec));
             } else if (len == 0) {
-                register_fd(EV_READ);
+                register_fd(ev::READ);
                 s_ = INIT;
             } else {
                 buf_->append(len);
                 if (policy_.read(len)) {
-                    s_ = RECV;
+                    s_ = DONE;
                     unregister_fd();
                     return Poll<Item>(Async<Item>(std::make_tuple(std::move(socket_), std::move(buf_))));
                 } else {
@@ -282,7 +293,7 @@ Poll<Optional<Socket>> AcceptStream::poll() {
     case INIT:
         handler_.reset(new SocketIOHandler(ev_,
             *CurrentTask::current_task(),
-            socket_.fd(), EV_READ));
+            socket_.fd(), ev::READ));
         s_ = ACCEPTING;
         // fall through
     case ACCEPTING: {

@@ -204,8 +204,10 @@ Poll<T> FutureBase<Derived, T>::wait() {
 
 template <typename Derived, typename T>
 BoxedFuture<T> FutureBase<Derived, T>::boxed() {
-  std::cerr << "FutureSpawn: " << folly::demangle(typeid(Derived).name())
-    << ", size: " << sizeof(Derived) << std::endl;
+#ifdef FUTURES_ENABLE_DEBUG_PRINT
+  FUTURES_DLOG(INFO) << "FutureSpawn: " << folly::demangle(typeid(Derived).name())
+    << ", size: " << sizeof(Derived);
+#endif
   std::unique_ptr<IFuture<T>> p(new Derived(move_self()));
   return BoxedFuture<T>(std::move(p));
 }

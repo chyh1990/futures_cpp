@@ -17,7 +17,7 @@ public:
     SignalIOHandler(EventExecutor &reactor, Task task, int signum)
         : sig_(reactor.getLoop()), task_(task),
         reactor_(reactor), signum_(signum) {
-        std::cerr << "SignalHandler start: " << std::endl;
+        FUTURES_DLOG(INFO) << "SignalHandler start";
         sig_.set(this);
         reactor_.linkWatcher(this);
         sig_.start(signum);
@@ -35,7 +35,7 @@ public:
     bool hasSignal() const { return signaled_; }
 
     ~SignalIOHandler() {
-        std::cerr << "SignalHandler stop: " << std::endl;
+        FUTURES_DLOG(INFO) << "SignalHandler stop";
         reactor_.unlinkWatcher(this);
         sig_.stop();
     }

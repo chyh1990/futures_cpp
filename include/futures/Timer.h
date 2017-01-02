@@ -14,7 +14,7 @@ private:
 public:
     TimerIOHandler(EventExecutor& reactor, Task task, double ts)
         : timer_(reactor.getLoop()), task_(task), reactor_(reactor) {
-        std::cerr << "TimerHandlerHERE: " << std::endl;
+        FUTURES_DLOG(INFO) << "TimerHandler new";
         timer_.set(this);
         reactor_.linkWatcher(this);
         timer_.start(ts);
@@ -25,7 +25,7 @@ public:
     }
 
     void operator()(ev::timer &io, int revents) {
-        std::cerr << "TimerIOHandler() " << revents << std::endl;
+        FUTURES_DLOG(INFO) << "TimerHandler call";
         task_.unpark();
     }
 
@@ -34,7 +34,7 @@ public:
     }
 
     ~TimerIOHandler() {
-        std::cerr << "TimerHandlerStop: " << std::endl;
+        FUTURES_DLOG(INFO) << "TimerHandler stop";
         reactor_.unlinkWatcher(this);
         timer_.stop();
     }

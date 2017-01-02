@@ -128,13 +128,10 @@ public:
         : impl_(std::move(f)) {}
 
     ~BoxedFuture() {
-      if (impl_)
-        std::cerr << "BOX DESTROY" << std::endl;
     }
 
     // override should be safe
     BoxedFuture<T> boxed() {
-      std::cerr << "DOUBLE BOXED" << std::endl;
       return BoxedFuture<T>(std::move(impl_));
     }
 
@@ -391,7 +388,7 @@ public:
     }
 
     ~Inner() {
-      std::cerr << "FutureSpawn INNER DESTROY" << std::endl;
+      FUTURES_DLOG(INFO) << "FutureSpawn INNER DESTROY";
     }
 
     Executor *exec_;
@@ -455,6 +452,12 @@ static inline OkFuture<folly::Unit> makeOk() {
 template <typename T>
 EmptyFuture<T> makeEmpty() {
   return EmptyFuture<T>();
+}
+
+template <typename F,
+         typename Return = typename std::remove_reference<detail::resultOf<F>>::type>
+LazyFuture<Return, F> makeLazy(F&& f) {
+  return LazyFuture<Return, F>(std::forward<F>(f));
 }
 
 }

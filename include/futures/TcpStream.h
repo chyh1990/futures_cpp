@@ -59,14 +59,14 @@ private:
 public:
     SocketIOHandler(EventExecutor& reactor, Task task, int fd, int mask)
         : io_(reactor.getLoop()), task_(task), reactor_(reactor) {
-        std::cerr << "SocketIOHandlerHERE: " << std::endl;
+        FUTURES_DLOG(INFO) << "SocketIOHandler new";
         io_.set(this);
         reactor_.linkWatcher(this);
         io_.start(fd, mask);
     }
 
     void operator()(ev::io &io, int revents) {
-        std::cerr << "SocketIOHandler() " << revents << std::endl;
+        FUTURES_DLOG(INFO) << "SocketIOHandler()";
         task_.unpark();
     }
 
@@ -75,7 +75,7 @@ public:
     }
 
     ~SocketIOHandler() {
-        std::cerr << "SocketIOHandlerDelete: " << std::endl;
+        FUTURES_DLOG(INFO) << "SocketIOHandler delete";
         reactor_.unlinkWatcher(this);
         io_.stop();
     }
@@ -203,12 +203,12 @@ public:
 
     enum State {
         INIT,
-        RECV,
+        DONE,
         CANCELLED,
     };
 
     RecvFuture(EventExecutor &ev, Socket socket, const ReadPolicy& policy)
-        : SocketFutureMixin(ev, std::move(socket)), s_(INIT),
+        : SocketFutureMixin(ev, std::move(socket)),
         policy_(policy),
         buf_(folly::IOBuf::create(policy_.bufferSize())) {}
 
@@ -216,7 +216,7 @@ public:
     void cancel() override;
 
 private:
-    State s_;
+    State s_ = INIT;
     ReadPolicy policy_;
     std::unique_ptr<folly::IOBuf> buf_;
     // ssize_t length_to_read_;

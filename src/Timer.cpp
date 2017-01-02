@@ -6,6 +6,7 @@ Poll<TimerFuture::Item> TimerFuture::poll() {
     std::error_code ec;
     switch (s_) {
         case INIT:
+            // should we update Task after each poll?
             handler_.reset(new TimerIOHandler(reactor_, *CurrentTask::current_task(), after_));
             s_ = WAITING;
             break;

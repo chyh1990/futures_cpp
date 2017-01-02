@@ -23,5 +23,6 @@ endif()
 CPPBUILD_INSTALL_LIB(futures_cpp)
 
 CPPBUILD_APP_TARGET(ex_socket examples/socket.cpp)
+CPPBUILD_APP_TARGET(ex_fake_http examples/fake_http.cpp)
 
 CPPBUILD_UNITTEST()

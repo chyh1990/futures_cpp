@@ -6,6 +6,7 @@
 #include <memory>
 #include <iostream>
 #include <condition_variable>
+#include <futures/detail/ThreadLocalData.h>
 
 namespace futures {
 
@@ -30,14 +31,14 @@ public:
         std::unique_lock<std::mutex> g(mu_);
         ready_ = true;
         cv_.notify_all();
-        std::cerr << "Unpark" << std::endl;
+        FUTURES_DLOG(INFO) << "Unpark";
     }
 
     void park() {
         std::unique_lock<std::mutex> g(mu_);
         if (ready_) return;
         ready_ = false;
-        std::cerr << "PARKING" << std::endl;
+        FUTURES_DLOG(INFO) << "PARKING";
         while (!ready_)
             cv_.wait(g);
     }
@@ -69,40 +70,11 @@ private:
     void *data_;
 };
 
-class CurrentTask {
+class CurrentTask : public ThreadLocalData<CurrentTask, Task> {
 public:
-    class WithGuard {
-    public:
-        WithGuard(CurrentTask *c, Task* t)
-            : c_(c), old_(c->current_) {
-            c->current_ = t;
-        }
+    using WithGuard = ThreadLocalData<CurrentTask, Task>::WithGuard;
 
-        ~WithGuard() { c_->current_ = old_; }
-    private:
-        CurrentTask *c_;
-        Task *old_;
-    };
-
-    static CurrentTask* this_thread() {
-        thread_local CurrentTask _tls;
-        return &_tls;
-    }
-
-    static Task *current_task() {
-        return this_thread()->current_;
-    }
-
-    // template <typename F>
-    // void set(Task *task, F&& f) {
-    //     WithGuard g(this, task);
-    //     F();
-    // }
-
-private:
-    CurrentTask() : current_(nullptr) {}
-
-    Task *current_;
+    static Task *current_task() { return current(); }
 };
 
 
