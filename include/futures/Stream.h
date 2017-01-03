@@ -25,6 +25,9 @@ struct isStream {
 template <typename Stream, typename F>
 class ForEachFuture;
 
+template <typename T, typename F>
+class ForEach2Wrapper;
+
 template <typename Derived, typename T>
 class StreamBase : public IStream<T> {
 public:
@@ -36,6 +39,9 @@ public:
 
     template <typename F>
     ForEachFuture<Derived, F> forEach(F&& f);
+
+    template <typename F>
+    ForEachFuture<Derived, ForEach2Wrapper<T, F>> forEach2(F&& f);
 
     StreamBase() = default;
     ~StreamBase() = default;

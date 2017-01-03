@@ -41,12 +41,33 @@ private:
     F func_;
 };
 
+template <typename T, typename F>
+class ForEach2Wrapper {
+public:
+    ForEach2Wrapper(F&& f)
+        : f_(std::move(f)) {
+    }
+
+    template <typename T0>
+    void operator()(T0&& v) {
+        return folly::applyTuple(f_, std::forward<T0>(v));
+    }
+private:
+    F f_;
+};
+
 template <typename Derived, typename T>
 template <typename F>
 ForEachFuture<Derived, F> StreamBase<Derived, T>::forEach(F&& f) {
     return ForEachFuture<Derived, F>(move_self(), std::forward<F>(f));
 };
 
+template <typename Derived, typename T>
+template <typename F>
+ForEachFuture<Derived, ForEach2Wrapper<T, F>>
+StreamBase<Derived, T>::forEach2(F&& f) {
+    return ForEachFuture<Derived, ForEach2Wrapper<T, F>>(move_self(), std::forward<F>(f));
+};
 
 // helper methods
 template <typename Iter>
