@@ -167,6 +167,92 @@ struct AndThenWrapper2 {
   F func_;
 };
 
+template <typename T>
+class SharedFuture : public FutureBase<SharedFuture<T>, T> {
+public:
+    using Item = T;
+    typedef std::unique_ptr<IFuture<T>> fptr;
+
+    static_assert(std::is_copy_constructible<T>::value, "T must be copyable");
+
+    // TODO use finer grain lock
+    struct Inner {
+      std::mutex mu;
+      fptr impl;
+      std::vector<Task> waiters;
+      Optional<Poll<Item>> result;
+
+      Inner(fptr f): impl(std::move(f)) {}
+    };
+
+    // TODO optimized out allocation
+    explicit SharedFuture(fptr impl)
+      : inner_(std::make_shared<Inner>(std::move(impl))) {}
+
+    SharedFuture(const SharedFuture& o)
+      : inner_(o.inner_) {
+#ifdef DEBUG_FUTURE
+      __moved_mark = o.__moved_mark;
+#endif
+    }
+    SharedFuture& operator=(const SharedFuture& o) {
+#ifdef DEBUG_FUTURE
+      __moved_mark = o.__moved_mark;
+#endif
+      inner_ = o.inner;
+      return *this;
+    }
+
+    // TODO allow polling from multiple source
+    Poll<Item> poll() {
+      if (!inner_) throw InvalidPollStateException();
+      std::lock_guard<std::mutex> g(inner_->mu);
+
+      if (inner_->result)
+        return inner_->result.value();
+      auto r = inner_->impl->poll();
+      if (r.hasException() || r.value().isReady()) {
+        inner_->result = r;
+        inner_->impl.reset(); // release original future
+        unpark_all();
+        return std::move(r);
+      }
+      park();
+      return Poll<Item>(not_ready);
+    }
+
+    void cancel() {
+      if (!inner_) throw InvalidPollStateException();
+      std::lock_guard<std::mutex> g(inner_->mu);
+      if (inner_->result) return;
+      inner_->impl->cancel();
+      unpark_all();
+    }
+
+    ~SharedFuture() {
+      if (!inner_) return;
+      std::lock_guard<std::mutex> g(inner_->mu);
+      if (inner_->result) return;
+      // wakeup another tasks, one of them will go on polling
+      // the original future.
+      unpark_all();
+    }
+
+    SharedFuture(SharedFuture&&) = default;
+    SharedFuture& operator=(SharedFuture&&) = default;
+private:
+    std::shared_ptr<Inner> inner_;
+
+    void park() {
+      inner_->waiters.push_back(*CurrentTask::current());
+    }
+
+    void unpark_all() {
+      for (auto &e : inner_->waiters)
+        e.unpark();
+      inner_->waiters.clear();
+    }
+};
 
 template <typename Derived, typename T>
 template <typename F, typename FutR,

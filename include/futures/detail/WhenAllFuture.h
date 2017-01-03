@@ -5,14 +5,15 @@
 
 namespace futures {
 
-template <typename T>
-using WhenAllItem = std::vector<T>;
+template <typename Fut>
+using WhenAllItem = std::vector<typename isFuture<Fut>::Inner>;
 
-template <typename T>
-class WhenAllFuture: public FutureBase<WhenAllFuture<T>, WhenAllItem<T>> {
+template <typename Fut>
+class WhenAllFuture: public FutureBase<WhenAllFuture<Fut>, WhenAllItem<Fut>> {
 public:
-    using Item = WhenAllItem<T>;
-    static_assert(std::is_default_constructible<T>::value, "T must be default constructiable");
+    using Item = WhenAllItem<Fut>;
+    using value_type = typename isFuture<Fut>::Inner;
+    static_assert(std::is_default_constructible<value_type>::value, "T must be default constructiable");
 
     template <class Iterator>
     WhenAllFuture(Iterator begin, Iterator end) {
@@ -46,8 +47,8 @@ public:
     }
 
 private:
-    std::vector<BoxedFuture<T>> all_;
-    std::vector<T> result_;
+    std::vector<Fut> all_;
+    std::vector<value_type> result_;
 
     void cancelPending() {
         for (auto &e: all_)
@@ -56,9 +57,10 @@ private:
 };
 
 template <typename It,
-         typename T = typename isFuture<typename std::iterator_traits<It>::value_type>::Inner >
-WhenAllFuture<T> whenAll(It begin, It end) {
-    return WhenAllFuture<T>(begin, end);
+         typename Fut = typename std::iterator_traits<It>::value_type,
+         typename = typename isFuture<Fut>::Inner >
+WhenAllFuture<Fut> whenAll(It begin, It end) {
+    return WhenAllFuture<Fut>(begin, end);
 }
 
 }

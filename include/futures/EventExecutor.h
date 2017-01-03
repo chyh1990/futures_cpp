@@ -10,8 +10,8 @@ namespace futures {
 class EventExecutor : public Executor {
 public:
     EventExecutor(bool is_main = false)
-        : loop_(is_main ? ev::get_default_loop() : ev::dynamic_loop()),
-          signaler_(loop_) {
+        : dyn_loop_(is_main ? nullptr : new ev::dynamic_loop()),
+          signaler_(getLoop()) {
         signaler_.set<EventExecutor, &EventExecutor::async_callback>(this);
     }
     ~EventExecutor() {}
@@ -71,7 +71,7 @@ public:
                 break;
             if (wait_stop_) break;
             FUTURES_DLOG(INFO) << "START POLL: " << this;
-            loop_.run(EVRUN_ONCE);
+            getLoop().run(EVRUN_ONCE);
             FUTURES_DLOG(INFO) << "END POLL: " << this;
         }
         // cleanup
@@ -88,7 +88,9 @@ public:
         FUTURES_DLOG(INFO) << "event loop end: " << this;
     }
 
-    ev::loop_ref &getLoop() { return loop_; }
+    ev::loop_ref getLoop() {
+        return dyn_loop_ ? *dyn_loop_ : ev::get_default_loop();
+    }
 
     // void incPending() { pending_++; }
     // void decPending() {
@@ -103,7 +105,7 @@ public:
         pendings_.erase(EventWatcherBase::EventList::s_iterator_to(*watcher));
     }
 private:
-    ev::loop_ref loop_;
+    std::unique_ptr<ev::dynamic_loop> dyn_loop_;
     // int64_t pending_ = 0;
     EventWatcherBase::EventList pendings_;
     boost::intrusive::list<Runnable> q_;

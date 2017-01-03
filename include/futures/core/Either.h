@@ -48,6 +48,8 @@ public:
         construct_right(right);
     }
 
+    Either(): state_(State::UNINIT) {
+    }
 
     ~Either() {
         clear();

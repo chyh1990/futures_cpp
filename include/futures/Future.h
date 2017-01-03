@@ -146,57 +146,6 @@ private:
 };
 
 template <typename T>
-class SharedFuture : public FutureBase<SharedFuture<T>, T> {
-public:
-    using Item = T;
-    typedef std::unique_ptr<IFuture<T>> fptr;
-
-    // TODO use finer grain lock
-    struct Inner {
-      std::mutex mu;
-      fptr impl;
-
-      Inner(fptr f): impl(std::move(f)) {}
-    };
-
-    // TODO optimized out allocation
-    explicit SharedFuture(fptr impl)
-      : inner_(std::make_shared<Inner>(std::move(impl))) {}
-
-    SharedFuture(const SharedFuture& o)
-      : inner_(o.inner_) {
-#ifdef DEBUG_FUTURE
-      __moved_mark = o.__moved_mark;
-#endif
-    }
-    SharedFuture& operator=(const SharedFuture& o) {
-#ifdef DEBUG_FUTURE
-      __moved_mark = o.__moved_mark;
-#endif
-      inner_ = o.inner;
-      return *this;
-    }
-
-    // TODO allow polling from multiple source
-    Poll<Item> poll() {
-      if (!inner_) throw InvalidPollStateException();
-      std::lock_guard<std::mutex> g(inner_->mu);
-      return inner_->impl->poll();
-    }
-
-    void cancel() {
-      if (!inner_) throw InvalidPollStateException();
-      std::lock_guard<std::mutex> g(inner_->mu);
-      return inner_->impl->cancel();
-    }
-
-    SharedFuture(SharedFuture&&) = default;
-    SharedFuture& operator=(SharedFuture&&) = default;
-private:
-    std::shared_ptr<Inner> inner_;
-};
-
-template <typename T>
 class EmptyFuture : public FutureBase<EmptyFuture<T>, T> {
 public:
     using Item = T;
@@ -210,17 +159,21 @@ class ErrFuture : public FutureBase<ErrFuture<T>, T> {
 public:
     using Item = T;
     Poll<T> poll() override {
+#if DEBUG_FUTURE
         if (consumed_)
             throw InvalidPollStateException();
         consumed_ = true;
+#endif
         return Poll<T>(std::move(e_));
     }
 
     explicit ErrFuture(folly::exception_wrapper e)
-        : consumed_(false), e_(std::move(e)) {
+        : e_(std::move(e)) {
     }
 private:
-    bool consumed_;
+#if DEBUG_FUTURE
+    bool consumed_ = false;
+#endif
     folly::exception_wrapper e_;
 };
 
@@ -229,22 +182,26 @@ class OkFuture : public FutureBase<OkFuture<T>, T> {
 public:
     using Item = T;
     Poll<T> poll() override {
+#if DEBUG_FUTURE
         if (consumed_)
             throw InvalidPollStateException();
         consumed_ = true;
+#endif
         return Poll<T>(Async<T>(std::move(v_)));
     }
 
     explicit OkFuture(const T& v)
-        : consumed_(false), v_(v) {
+        : v_(v) {
     }
 
     explicit OkFuture(T&& v) noexcept
-        : consumed_(false), v_(std::move(v)) {
+        : v_(std::move(v)) {
     }
 
 private:
-    bool consumed_;
+#if DEBUG_FUTURE
+    bool consumed_ = false;
+#endif
     T v_;
 };
 

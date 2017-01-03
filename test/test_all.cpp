@@ -65,9 +65,13 @@ TEST(Future, Move) {
 TEST(Future, Shared) {
 	auto f = makeOk(42).shared();
 	auto f1 = f;
+	auto f2 = f;
 
 	bool b = std::is_copy_constructible<SharedFuture<int>>::value;
 	EXPECT_TRUE(b);
+
+	EXPECT_EQ(f1.poll().value(), Async<int>(42));
+	EXPECT_EQ(f2.poll().value(), Async<int>(42));
 }
 
 TEST(Future, AndThen) {
@@ -96,7 +100,10 @@ TEST(Future, Join) {
 TEST(Future, Select) {
 	auto f1 = makeOk(1);
 	auto f2 = makeOk(2);
-	auto f = makeSelect(std::move(f1), std::move(f2));
+	std::vector<OkFuture<int>> fs;
+	fs.push_back(std::move(f1));
+	fs.push_back(std::move(f2));
+	auto f = makeSelect(fs.begin(), fs.end());
 
 	f.wait();
 }
