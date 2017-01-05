@@ -9,11 +9,11 @@ using namespace futures;
 const std::string kResponse = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHELLO";
 
 static BoxedFuture<folly::Unit> process(EventExecutor *ev, tcp::Socket client) {
-    return tcp::Stream::recv(*ev,
+    return tcp::Stream::recv(ev,
             std::move(client), tcp::TransferAtLeast(10, 1024))
         .andThen2([] (tcp::Socket s, std::unique_ptr<folly::IOBuf> buf) {
             auto buf1 = folly::IOBuf::copyBuffer(kResponse.data(), kResponse.size(), 0, 64);
-            return tcp::Stream::send(*EventExecutor::current(),
+            return tcp::Stream::send(EventExecutor::current(),
                     std::move(s), std::move(buf1));
         })
         .then([] (Try<tcp::SendFutureItem> s) {
@@ -38,13 +38,13 @@ int main(int argc, char *argv[])
         worker_loops[i].reset(new EventExecutor());
 
     std::cerr << "listening: " << 8011 << std::endl;
-    auto f = tcp::Stream::acceptStream(loop, s)
+    auto f = tcp::Stream::acceptStream(&loop, s)
         .forEach([&worker_loops] (tcp::Socket client) {
             auto loop = worker_loops[rand() % kWorkers].get();
             // auto loop = EventExecutor::current();
             loop->spawn(process(loop, std::move(client)));
         });
-    auto sig = signal(loop, SIGINT)
+    auto sig = signal(&loop, SIGINT)
         .andThen([&] (int signum) {
             std::cerr << "killed by " << signum << std::endl;
             EventExecutor::current()->stop();

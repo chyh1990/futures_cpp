@@ -23,9 +23,9 @@ TEST(Stream, Iter) {
 
 static BoxedFuture<folly::Unit> process(EventExecutor &ev, tcp::Socket client) {
     auto c = folly::makeMoveWrapper(std::move(client));
-    return delay(ev, 0.5)
+    return delay(&ev, 0.5)
         .andThen([&ev, c] (std::error_code ec) {
-            return tcp::Stream::send(ev, c.move(),
+            return tcp::Stream::send(&ev, c.move(),
                     folly::IOBuf::copyBuffer("TEST\n", 5, 0, 0));
         })
         .then([&ev] (Try<tcp::SendFutureItem> s) {
@@ -43,7 +43,7 @@ TEST(Stream, Listen) {
     EXPECT_TRUE(!ec);
 
     EventExecutor loop;
-    auto f = tcp::Stream::acceptStream(loop, s)
+    auto f = tcp::Stream::acceptStream(&loop, s)
         .forEach([&loop] (tcp::Socket client) {
             std::cerr << "FD " << client.fd() << std::endl;
             loop.spawn(process(loop, std::move(client)));

@@ -54,14 +54,14 @@ class SocketIOHandler : public EventWatcherBase {
 private:
     ev::io io_;
     Task task_;
-    EventExecutor &reactor_;
+    EventExecutor* reactor_;
 
 public:
-    SocketIOHandler(EventExecutor& reactor, Task task, int fd, int mask)
-        : io_(reactor.getLoop()), task_(task), reactor_(reactor) {
+    SocketIOHandler(EventExecutor* reactor, Task task, int fd, int mask)
+        : io_(reactor->getLoop()), task_(task), reactor_(reactor) {
         FUTURES_DLOG(INFO) << "SocketIOHandler new";
         io_.set(this);
-        reactor_.linkWatcher(this);
+        reactor_->linkWatcher(this);
         io_.start(fd, mask);
     }
 
@@ -76,7 +76,7 @@ public:
 
     ~SocketIOHandler() {
         FUTURES_DLOG(INFO) << "SocketIOHandler delete";
-        reactor_.unlinkWatcher(this);
+        reactor_->unlinkWatcher(this);
         io_.stop();
     }
 
@@ -87,7 +87,7 @@ public:
     void register_fd(int mask);
     void unregister_fd();
 
-    SocketFutureMixin(EventExecutor &ev, Socket socket)
+    SocketFutureMixin(EventExecutor *ev, Socket socket)
         : reactor_(ev), socket_(std::move(socket)) {
     }
 
@@ -96,7 +96,7 @@ public:
     // }
 
 protected:
-    EventExecutor &reactor_;
+    EventExecutor *reactor_;
     Socket socket_;
     std::unique_ptr<SocketIOHandler> handler_;
 };
@@ -115,7 +115,7 @@ public:
     Poll<Socket> poll() override;
     void cancel() override;
 
-    ConnectFuture(EventExecutor &ev,
+    ConnectFuture(EventExecutor *ev,
         const std::string addr, uint16_t port)
         : SocketFutureMixin(ev, Socket()), s_(INIT),
         addr_(addr), port_(port) {}
@@ -137,7 +137,7 @@ public:
         CANCELLED,
     };
 
-    SendFuture(EventExecutor &ev, Socket socket,
+    SendFuture(EventExecutor *ev, Socket socket,
             std::unique_ptr<folly::IOBuf> buf)
         : SocketFutureMixin(ev, std::move(socket)), s_(INIT),
         buf_(std::move(buf)) {}
@@ -207,7 +207,7 @@ public:
         CANCELLED,
     };
 
-    RecvFuture(EventExecutor &ev, Socket socket, const ReadPolicy& policy)
+    RecvFuture(EventExecutor *ev, Socket socket, const ReadPolicy& policy)
         : SocketFutureMixin(ev, std::move(socket)),
         policy_(policy),
         buf_(folly::IOBuf::create(policy_.bufferSize())) {}
@@ -234,36 +234,36 @@ public:
 
     Poll<Optional<Item>> poll() override;
 
-    AcceptStream(EventExecutor &ev, Socket& s)
+    AcceptStream(EventExecutor *ev, Socket& s)
         : ev_(ev), socket_(s) {}
 private:
     State s_ = INIT;
-    EventExecutor &ev_;
+    EventExecutor *ev_;
     Socket &socket_;
     std::unique_ptr<SocketIOHandler> handler_;
 };
 
 class Stream {
 public:
-    static ConnectFuture connect(EventExecutor &reactor,
+    static ConnectFuture connect(EventExecutor *reactor,
             const std::string &addr, uint16_t port)
     {
         return ConnectFuture(reactor, addr, port);
     }
 
-    static SendFuture send(EventExecutor &reactor,
+    static SendFuture send(EventExecutor *reactor,
             Socket socket, std::unique_ptr<folly::IOBuf> buf)
     {
         return SendFuture(reactor, std::move(socket), std::move(buf));
     }
 
-    static AcceptStream acceptStream(EventExecutor &reactor, Socket &listener)
+    static AcceptStream acceptStream(EventExecutor *reactor, Socket &listener)
     {
         return AcceptStream(reactor, listener);
     }
 
     template <class ReadPolicy>
-    static RecvFuture<ReadPolicy> recv(EventExecutor &reactor,
+    static RecvFuture<ReadPolicy> recv(EventExecutor *reactor,
             Socket socket, ReadPolicy&& policy)
     {
         return RecvFuture<ReadPolicy>(reactor, std::move(socket), std::forward<ReadPolicy>(policy));

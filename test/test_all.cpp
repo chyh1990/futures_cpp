@@ -141,15 +141,15 @@ TEST(Executor, CpuExcept) {
 TEST(Executor, Event) {
 	EventExecutor ev;
 
-	auto f = tcp::Stream::connect(ev, "127.0.0.1", 8111)
+	auto f = tcp::Stream::connect(&ev, "127.0.0.1", 8111)
 	.andThen([&ev] (tcp::Socket s) {
 		std::cerr << "connected" << std::endl;
-		return tcp::Stream::recv(ev, std::move(s), tcp::TransferExactly(32));
+		return tcp::Stream::recv(&ev, std::move(s), tcp::TransferExactly(32));
 	}).andThen2([&ev] (tcp::Socket s, std::unique_ptr<folly::IOBuf> buf) {
 		buf->reserve(0, 32);
 		memcpy(buf->writableTail(), " WORLD\n", 7);
 		buf->append(7);
-		return tcp::Stream::send(ev, std::move(s), std::move(buf));
+		return tcp::Stream::send(&ev, std::move(s), std::move(buf));
 	}).andThen2([] (tcp::Socket s, size_t size) {
 		std::cerr << "sent " << size << std::endl;
 		return makeOk();
@@ -167,7 +167,7 @@ TEST(Executor, Event) {
 
 TEST(Executor, Timer) {
 	EventExecutor ev;
-	auto f = TimerFuture(ev, 1)
+	auto f = TimerFuture(&ev, 1)
 		.andThen([&ev] (std::error_code _ec) {
 			std::cerr << "DONE" << std::endl;
 			return makeOk();
@@ -184,7 +184,7 @@ TEST(Future, Timeout) {
 
 	auto f = makeEmpty<int>();
 
-	auto f1 = timeout(ev, std::move(f), 1.0)
+	auto f1 = timeout(&ev, std::move(f), 1.0)
 		.then([] (Try<int> v) {
 			if (v.hasException())
 				std::cerr << "ERROR" << std::endl;
@@ -199,7 +199,7 @@ TEST(Future, AllTimeout) {
 	EventExecutor ev;
 
 	std::vector<BoxedFuture<int>> f;
-	f.emplace_back(TimerFuture(ev, 1.0)
+	f.emplace_back(TimerFuture(&ev, 1.0)
 		.then([] (Try<std::error_code> v) {
 			if (v.hasException())
 				std::cerr << "ERROR" << std::endl;
@@ -207,7 +207,7 @@ TEST(Future, AllTimeout) {
 				std::cerr << "Timer1 done" << std::endl;
 			return makeOk(1);
 		}).boxed());
-	f.emplace_back(TimerFuture(ev, 2.0)
+	f.emplace_back(TimerFuture(&ev, 2.0)
 		.then([] (Try<std::error_code> v) {
 			if (v.hasException())
 				std::cerr << "ERROR" << std::endl;
@@ -228,7 +228,7 @@ TEST(Future, AllTimeout) {
 BoxedFuture<std::vector<int>> rwait(EventExecutor &ev, std::vector<int> &v, int n) {
 	if (n == 0)
 		return makeOk(std::move(v)).boxed();
-	return TimerFuture(ev, 0.1)
+	return TimerFuture(&ev, 0.1)
 		.andThen(
 			[&ev, &v, n] (std::error_code) {
 				v.push_back(n);

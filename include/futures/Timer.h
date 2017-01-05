@@ -9,14 +9,14 @@ class TimerIOHandler : public EventWatcherBase {
 private:
     ev::timer timer_;
     Task task_;
-    EventExecutor &reactor_;
+    EventExecutor *reactor_;
 
 public:
-    TimerIOHandler(EventExecutor& reactor, Task task, double ts)
-        : timer_(reactor.getLoop()), task_(task), reactor_(reactor) {
+    TimerIOHandler(EventExecutor* reactor, Task task, double ts)
+        : timer_(reactor->getLoop()), task_(task), reactor_(reactor) {
         FUTURES_DLOG(INFO) << "TimerHandler new";
         timer_.set(this);
-        reactor_.linkWatcher(this);
+        reactor_->linkWatcher(this);
         timer_.start(ts);
     }
 
@@ -35,7 +35,7 @@ public:
 
     ~TimerIOHandler() {
         FUTURES_DLOG(INFO) << "TimerHandler stop";
-        reactor_.unlinkWatcher(this);
+        reactor_->unlinkWatcher(this);
         timer_.stop();
     }
 };
@@ -52,7 +52,7 @@ public:
 
     typedef std::error_code Item;
 
-    TimerFuture(EventExecutor &ev, double after)
+    TimerFuture(EventExecutor *ev, double after)
         : reactor_(ev), after_(after), s_(INIT) {}
 
     Poll<Item> poll();
@@ -60,7 +60,7 @@ public:
     void cancel();
 
 private:
-    EventExecutor &reactor_;
+    EventExecutor *reactor_;
     double after_;
     State s_;
     std::unique_ptr<TimerIOHandler> handler_;
@@ -78,7 +78,7 @@ class TimeoutFuture : public FutureBase<TimeoutFuture<Fut>, typename isFuture<Fu
 public:
     typedef typename isFuture<Fut>::Inner Item;
 
-    TimeoutFuture(EventExecutor &ev, Fut f, double after)
+    TimeoutFuture(EventExecutor *ev, Fut f, double after)
         : f_(std::move(f)), timer_(TimerFuture(ev, after))
     {
     }
@@ -108,11 +108,11 @@ private:
 };
 
 template <typename Fut>
-TimeoutFuture<Fut> timeout(EventExecutor& ev, Fut &&f, double after) {
+TimeoutFuture<Fut> timeout(EventExecutor* ev, Fut &&f, double after) {
     return TimeoutFuture<Fut>(ev, std::forward<Fut>(f), after);
 }
 
-inline TimerFuture delay(EventExecutor& ev, double after) {
+inline TimerFuture delay(EventExecutor* ev, double after) {
     return TimerFuture(ev, after);
 }
 

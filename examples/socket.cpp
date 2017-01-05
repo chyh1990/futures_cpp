@@ -14,7 +14,7 @@ struct SharedState {
 static BoxedFuture<folly::Unit> process(EventExecutor &ev,
         std::shared_ptr<SharedState> state, tcp::Socket client) {
     auto c = folly::makeMoveWrapper(std::move(client));
-    return delay(ev, 0.5)
+    return delay(&ev, 0.5)
         .andThen([&ev, c, state] (std::error_code ec) {
             state->counter ++;
             auto buf = folly::IOBuf::copyBuffer("TEST ", 5, 0, 64);
@@ -23,7 +23,7 @@ static BoxedFuture<folly::Unit> process(EventExecutor &ev,
             if (nlen < 0)
                 throw std::runtime_error("buffer overflow");
             buf->append(nlen);
-            return tcp::Stream::send(ev, c.move(), std::move(buf));
+            return tcp::Stream::send(&ev, c.move(), std::move(buf));
         })
         .then([&ev] (Try<tcp::SendFutureItem> s) {
             if (s.hasException())
@@ -43,12 +43,12 @@ int main(int argc, char *argv[])
     EventExecutor loop;
     auto state = std::make_shared<SharedState>();
 
-    auto f = tcp::Stream::acceptStream(loop, s)
+    auto f = tcp::Stream::acceptStream(&loop, s)
         .forEach([&loop, state] (tcp::Socket client) {
             std::cerr << "new client: " << client.fd() << std::endl;
             loop.spawn(process(loop, state, std::move(client)));
         });
-    auto sig = signal(loop, SIGINT)
+    auto sig = signal(&loop, SIGINT)
         .andThen([&loop] (int signum) {
             std::cerr << "killed by " << signum << std::endl;
             loop.stop();

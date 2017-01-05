@@ -9,17 +9,17 @@ class SignalIOHandler : public EventWatcherBase {
 private:
     ev::sig sig_;
     Task task_;
-    EventExecutor &reactor_;
+    EventExecutor *reactor_;
     int signum_;
     bool signaled_ = false;
 
 public:
-    SignalIOHandler(EventExecutor &reactor, Task task, int signum)
-        : sig_(reactor.getLoop()), task_(task),
+    SignalIOHandler(EventExecutor *reactor, Task task, int signum)
+        : sig_(reactor->getLoop()), task_(task),
         reactor_(reactor), signum_(signum) {
         FUTURES_DLOG(INFO) << "SignalHandler start";
         sig_.set(this);
-        reactor_.linkWatcher(this);
+        reactor_->linkWatcher(this);
         sig_.start(signum);
     }
 
@@ -36,7 +36,7 @@ public:
 
     ~SignalIOHandler() {
         FUTURES_DLOG(INFO) << "SignalHandler stop";
-        reactor_.unlinkWatcher(this);
+        reactor_->unlinkWatcher(this);
         sig_.stop();
     }
 };
@@ -52,7 +52,7 @@ public:
         CANCELLED,
     };
 
-    SignalFuture(EventExecutor &ev, int signum)
+    SignalFuture(EventExecutor *ev, int signum)
         : ev_(ev), signum_(signum) {
     }
 
@@ -82,12 +82,12 @@ public:
     }
 private:
     State s_ = INIT;;
-    EventExecutor & ev_;
+    EventExecutor* ev_;
     int signum_;
     std::unique_ptr<SignalIOHandler> handler_;
 };
 
-inline SignalFuture signal(EventExecutor& ev, int signum) {
+inline SignalFuture signal(EventExecutor* ev, int signum) {
     return SignalFuture(ev, signum);
 }
 
