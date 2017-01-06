@@ -185,9 +185,13 @@ class exception_wrapper {
   std::exception* getCopied() { return item_.get(); }
   const std::exception* getCopied() const { return item_.get(); }
 
+  static inline std::string exceptionStr(const std::exception& e) {
+    return demangle(typeid(e)) + ": " + e.what();
+  }
+
   std::string what() const {
     if (item_) {
-      return demangle(typeid(item_)) + ": " + item_->what();
+      return exceptionStr(*item_);
     } else if (eptr_) {
       return estr_;
     } else {
