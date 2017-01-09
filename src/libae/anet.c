@@ -246,6 +246,17 @@ static int anetSetReuseAddr(char *err, int fd) {
     return ANET_OK;
 }
 
+static int anetSetReusePort(char *err, int fd) {
+    int yes = 1;
+    /* Make sure connection-intensive things like the redis benckmark
+     * will be able to close/open sockets a zillion of times */
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes)) == -1) {
+        anetSetError(err, "setsockopt SO_REUSEPORT: %s", strerror(errno));
+        return ANET_ERR;
+    }
+    return ANET_OK;
+}
+
 static int anetCreateSocket(char *err, int domain) {
     int s;
     if ((s = socket(domain, SOCK_STREAM, 0)) == -1) {
@@ -460,7 +471,7 @@ static int anetV6Only(char *err, int s) {
     return ANET_OK;
 }
 
-static int _anetTcpServer(char *err, int port, char *bindaddr, int af, int backlog)
+static int _anetTcpServer(char *err, int port, char *bindaddr, int af, int backlog, int reuse_port)
 {
     int s, rv;
     char _port[6];  /* strlen("65535") */
@@ -482,6 +493,7 @@ static int _anetTcpServer(char *err, int port, char *bindaddr, int af, int backl
 
         if (af == AF_INET6 && anetV6Only(err,s) == ANET_ERR) goto error;
         if (anetSetReuseAddr(err,s) == ANET_ERR) goto error;
+        if (reuse_port && (anetSetReusePort(err,s) == ANET_ERR)) goto error;
         if (anetListen(err,s,p->ai_addr,p->ai_addrlen,backlog) == ANET_ERR) goto error;
         goto end;
     }
@@ -497,14 +509,14 @@ end:
     return s;
 }
 
-int anetTcpServer(char *err, int port, char *bindaddr, int backlog)
+int anetTcpServer(char *err, int port, char *bindaddr, int backlog, int reuse_port)
 {
-    return _anetTcpServer(err, port, bindaddr, AF_INET, backlog);
+    return _anetTcpServer(err, port, bindaddr, AF_INET, backlog, reuse_port);
 }
 
-int anetTcp6Server(char *err, int port, char *bindaddr, int backlog)
+int anetTcp6Server(char *err, int port, char *bindaddr, int backlog, int reuse_port)
 {
-    return _anetTcpServer(err, port, bindaddr, AF_INET6, backlog);
+    return _anetTcpServer(err, port, bindaddr, AF_INET6, backlog, reuse_port);
 }
 
 int anetUnixServer(char *err, char *path, mode_t perm, int backlog)

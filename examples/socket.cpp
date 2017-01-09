@@ -12,10 +12,9 @@ struct SharedState {
 };
 
 static BoxedFuture<folly::Unit> process(EventExecutor &ev,
-        std::shared_ptr<SharedState> state, tcp::Socket client) {
-    auto c = folly::makeMoveWrapper(std::move(client));
+        std::shared_ptr<SharedState> state, tcp::SocketPtr client) {
     return delay(&ev, 0.5)
-        .andThen([&ev, c, state] (std::error_code ec) {
+        .andThen([&ev, client, state] (std::error_code ec) {
             state->counter ++;
             auto buf = folly::IOBuf::copyBuffer("TEST ", 5, 0, 64);
             auto nlen = ::snprintf((char*)buf->writableTail(),
@@ -23,9 +22,9 @@ static BoxedFuture<folly::Unit> process(EventExecutor &ev,
             if (nlen < 0)
                 throw std::runtime_error("buffer overflow");
             buf->append(nlen);
-            return tcp::Stream::send(&ev, c.move(), std::move(buf));
+            return tcp::Stream::send(&ev, client, std::move(buf));
         })
-        .then([&ev] (Try<tcp::SendFutureItem> s) {
+        .then([&ev] (Try<ssize_t> s) {
             if (s.hasException())
                 std::cerr << "ERROR: " << s.exception().what() << std::endl;
             return makeOk();
@@ -36,17 +35,17 @@ static BoxedFuture<folly::Unit> process(EventExecutor &ev,
 int main(int argc, char *argv[])
 {
     std::error_code ec;
-    tcp::Socket s;
-    s.tcpServer("127.0.0.1", 8011, 32, ec);
+    auto s = std::make_shared<tcp::Socket>();
+    s->tcpServer("127.0.0.1", 8011, 32, ec);
     assert(!ec);
 
     EventExecutor loop;
     auto state = std::make_shared<SharedState>();
 
     auto f = tcp::Stream::acceptStream(&loop, s)
-        .forEach([&loop, state] (tcp::Socket client) {
-            std::cerr << "new client: " << client.fd() << std::endl;
-            loop.spawn(process(loop, state, std::move(client)));
+        .forEach([&loop, state] (tcp::SocketPtr client) {
+            std::cerr << "new client: " << client->fd() << std::endl;
+            loop.spawn(process(loop, state, client));
         });
     auto sig = signal(&loop, SIGINT)
         .andThen([&loop] (int signum) {

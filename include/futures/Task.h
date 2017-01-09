@@ -75,6 +75,11 @@ public:
     using WithGuard = ThreadLocalData<CurrentTask, Task>::WithGuard;
 
     static Task *current_task() { return current(); }
+    static Task park() {
+        auto p = current();
+        assert(p && "not in task context");
+        return *p;
+    }
 };
 
 

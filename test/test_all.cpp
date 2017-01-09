@@ -138,13 +138,14 @@ TEST(Executor, CpuExcept) {
 }
 
 
+#if 0
 TEST(Executor, Event) {
 	EventExecutor ev;
 
 	auto f = tcp::Stream::connect(&ev, "127.0.0.1", 8111)
 	.andThen([&ev] (tcp::Socket s) {
 		std::cerr << "connected" << std::endl;
-		return tcp::Stream::recv(&ev, std::move(s), tcp::TransferExactly(32));
+		return tcp::Stream::recv(&ev, std::move(s), io::TransferExactly(32));
 	}).andThen2([&ev] (tcp::Socket s, std::unique_ptr<folly::IOBuf> buf) {
 		buf->reserve(0, 32);
 		memcpy(buf->writableTail(), " WORLD\n", 7);
@@ -164,6 +165,7 @@ TEST(Executor, Event) {
 	std::cerr << "END" << std::endl;
 
 }
+#endif
 
 TEST(Executor, Timer) {
 	EventExecutor ev;

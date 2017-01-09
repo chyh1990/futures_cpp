@@ -21,14 +21,13 @@ TEST(Stream, Iter) {
     f.wait();
 }
 
-static BoxedFuture<folly::Unit> process(EventExecutor &ev, tcp::Socket client) {
-    auto c = folly::makeMoveWrapper(std::move(client));
+static BoxedFuture<folly::Unit> process(EventExecutor &ev, tcp::SocketPtr client) {
     return delay(&ev, 0.5)
-        .andThen([&ev, c] (std::error_code ec) {
-            return tcp::Stream::send(&ev, c.move(),
+        .andThen([&ev, client] (std::error_code ec) {
+            return tcp::Stream::send(&ev, client,
                     folly::IOBuf::copyBuffer("TEST\n", 5, 0, 0));
         })
-        .then([&ev] (Try<tcp::SendFutureItem> s) {
+        .then([&ev] (Try<ssize_t> s) {
             ev.stop();
             return makeOk();
         }).boxed();
@@ -37,16 +36,16 @@ static BoxedFuture<folly::Unit> process(EventExecutor &ev, tcp::Socket client) {
 
 TEST(Stream, Listen) {
     std::error_code ec;
-    tcp::Socket s;
-    s.tcpServer("127.0.0.1", 8011, 32, ec);
+    auto s = std::make_shared<tcp::Socket>();
+    s->tcpServer("127.0.0.1", 8011, 32, ec);
 
     EXPECT_TRUE(!ec);
 
     EventExecutor loop;
     auto f = tcp::Stream::acceptStream(&loop, s)
-        .forEach([&loop] (tcp::Socket client) {
-            std::cerr << "FD " << client.fd() << std::endl;
-            loop.spawn(process(loop, std::move(client)));
+        .forEach([&loop] (tcp::SocketPtr client) {
+            std::cerr << "FD " << client->fd() << std::endl;
+            loop.spawn(process(loop, client));
         });
     loop.spawn(std::move(f));
     loop.run();

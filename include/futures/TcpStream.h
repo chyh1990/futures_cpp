@@ -1,10 +1,10 @@
 #pragma once
 
 #include <futures/core/IOBuf.h>
-#include <futures/Future.h>
 #include <futures/Stream.h>
 #include <futures/EventLoop.h>
 #include <futures/EventExecutor.h>
+#include <futures/io/IoFuture.h>
 
 namespace futures {
 
@@ -50,58 +50,36 @@ private:
     int fd_;
 };
 
-class SocketIOHandler : public EventWatcherBase {
-private:
-    ev::io io_;
-    Task task_;
-    EventExecutor* reactor_;
+using SocketPtr = std::shared_ptr<Socket>;
 
+class SocketIOHandler : public io::DescriptorIo {
 public:
-    SocketIOHandler(EventExecutor* reactor, Task task, int fd, int mask)
-        : io_(reactor->getLoop()), task_(task), reactor_(reactor) {
+    SocketIOHandler(EventExecutor* reactor, SocketPtr sock)
+        : io::DescriptorIo(reactor, sock->fd()), socket_(sock) {
         FUTURES_DLOG(INFO) << "SocketIOHandler new";
-        io_.set(this);
-        reactor_->linkWatcher(this);
-        io_.start(fd, mask);
-    }
-
-    void operator()(ev::io &io, int revents) {
-        FUTURES_DLOG(INFO) << "SocketIOHandler()";
-        task_.unpark();
-    }
-
-    void cleanup(int reason) override {
-        task_.unpark();
     }
 
     ~SocketIOHandler() {
-        FUTURES_DLOG(INFO) << "SocketIOHandler delete";
-        reactor_->unlinkWatcher(this);
-        io_.stop();
+        if (socket_)
+            FUTURES_DLOG(INFO) << "SocketIOHandler delete";
     }
 
-};
-
-class SocketFutureMixin {
-public:
-    void register_fd(int mask);
-    void unregister_fd();
-
-    SocketFutureMixin(EventExecutor *ev, Socket socket)
-        : reactor_(ev), socket_(std::move(socket)) {
+    ssize_t read(folly::IOBuf *buf, size_t len, std::error_code &ec) override {
+        return socket_->recv(buf->writableTail(), len, 0, ec);
     }
 
-    // ~SocketFutureMixin() {
-    //     unregister_fd();
-    // }
+    ssize_t write(const folly::IOBuf &buf, size_t len, std::error_code &ec) override {
+        return socket_->send(buf.data(), len, 0, ec);
+    }
 
-protected:
-    EventExecutor *reactor_;
-    Socket socket_;
-    std::unique_ptr<SocketIOHandler> handler_;
+    Socket *getSocket() { return socket_.get(); }
+    SocketPtr getSocketPtr() { return socket_; }
+
+private:
+    std::shared_ptr<Socket> socket_;
 };
 
-class ConnectFuture : public FutureBase<ConnectFuture, Socket>, SocketFutureMixin {
+class ConnectFuture : public FutureBase<ConnectFuture, SocketPtr> {
 public:
     enum State {
         INIT,
@@ -110,119 +88,24 @@ public:
         CANCELLED,
     };
 
-    typedef Socket Item;
+    using Item = SocketPtr;
 
-    Poll<Socket> poll() override;
+    Poll<SocketPtr> poll() override;
     void cancel() override;
 
     ConnectFuture(EventExecutor *ev,
         const std::string addr, uint16_t port)
-        : SocketFutureMixin(ev, Socket()), s_(INIT),
+        : io_(new SocketIOHandler(ev, std::make_shared<Socket>())),
         addr_(addr), port_(port) {}
 
 private:
-    State s_;
+    std::unique_ptr<SocketIOHandler> io_;
+    State s_ = INIT;
     std::string addr_;
     uint16_t port_;
 };
 
-typedef std::tuple<Socket, ssize_t> SendFutureItem;
-class SendFuture : public FutureBase<SendFuture, SendFutureItem>, SocketFutureMixin {
-public:
-    typedef SendFutureItem Item;
-
-    enum State {
-        INIT,
-        SENT,
-        CANCELLED,
-    };
-
-    SendFuture(EventExecutor *ev, Socket socket,
-            std::unique_ptr<folly::IOBuf> buf)
-        : SocketFutureMixin(ev, std::move(socket)), s_(INIT),
-        buf_(std::move(buf)) {}
-
-    Poll<Item> poll() override;
-    void cancel() override;
-
-private:
-    State s_;
-    std::unique_ptr<folly::IOBuf> buf_;
-};
-
-class TransferAtLeast {
-public:
-    TransferAtLeast(ssize_t length, ssize_t buf_size)
-        : length_(length), buf_size_(buf_size) {
-        assert(length > 0);
-        assert(buf_size >= length);
-    }
-
-    TransferAtLeast(ssize_t length)
-        : length_(length), buf_size_(length * 2) {
-        assert(length >= 0);
-    }
-
-    size_t bufferSize() const {
-        return buf_size_;
-    }
-
-    size_t remainBufferSize() const {
-        assert(buf_size_ >= read_);
-        return buf_size_ - read_;
-    }
-
-    // mark readed
-    bool read(ssize_t s) {
-        assert(s >= 0);
-        read_ += s;
-        if (read_ >= length_)
-            return true;
-        return false;
-    }
-
-private:
-    const ssize_t length_;
-    const ssize_t buf_size_;
-    ssize_t read_ = 0;
-};
-
-class TransferExactly : public TransferAtLeast {
-public:
-    TransferExactly(ssize_t size)
-        : TransferAtLeast(size, size) {}
-};
-
-typedef std::tuple<Socket, std::unique_ptr<folly::IOBuf>> RecvFutureItem;
-template <class ReadPolicy>
-class RecvFuture
-    : public FutureBase<RecvFuture<ReadPolicy>, RecvFutureItem>,
-             SocketFutureMixin {
-public:
-    typedef RecvFutureItem Item;
-
-    enum State {
-        INIT,
-        DONE,
-        CANCELLED,
-    };
-
-    RecvFuture(EventExecutor *ev, Socket socket, const ReadPolicy& policy)
-        : SocketFutureMixin(ev, std::move(socket)),
-        policy_(policy),
-        buf_(folly::IOBuf::create(policy_.bufferSize())) {}
-
-    Poll<Item> poll() override;
-    void cancel() override;
-
-private:
-    State s_ = INIT;
-    ReadPolicy policy_;
-    std::unique_ptr<folly::IOBuf> buf_;
-    // ssize_t length_to_read_;
-};
-
-class AcceptStream : public StreamBase<AcceptStream, Socket> {
+class AcceptStream : public StreamBase<AcceptStream, SocketPtr> {
 public:
     enum State {
         INIT,
@@ -230,17 +113,16 @@ public:
         CLOSED,
     };
 
-    using Item = Socket;
+    using Item = SocketPtr;
 
     Poll<Optional<Item>> poll() override;
 
-    AcceptStream(EventExecutor *ev, Socket& s)
-        : ev_(ev), socket_(s) {}
+    AcceptStream(EventExecutor *ev, std::shared_ptr<Socket> s)
+        : io_(new SocketIOHandler(ev, s)) {}
+
 private:
     State s_ = INIT;
-    EventExecutor *ev_;
-    Socket &socket_;
-    std::unique_ptr<SocketIOHandler> handler_;
+    std::unique_ptr<SocketIOHandler> io_;
 };
 
 class Stream {
@@ -251,22 +133,26 @@ public:
         return ConnectFuture(reactor, addr, port);
     }
 
-    static SendFuture send(EventExecutor *reactor,
-            Socket socket, std::unique_ptr<folly::IOBuf> buf)
+    static io::SendFuture send(EventExecutor *reactor,
+            SocketPtr socket, std::unique_ptr<folly::IOBuf> buf)
     {
-        return SendFuture(reactor, std::move(socket), std::move(buf));
+        return io::SendFuture(folly::make_unique<SocketIOHandler>(reactor, socket),
+                std::move(buf));
     }
 
-    static AcceptStream acceptStream(EventExecutor *reactor, Socket &listener)
+    static AcceptStream acceptStream(EventExecutor *reactor,
+            std::shared_ptr<Socket> listener)
     {
         return AcceptStream(reactor, listener);
     }
 
     template <class ReadPolicy>
-    static RecvFuture<ReadPolicy> recv(EventExecutor *reactor,
-            Socket socket, ReadPolicy&& policy)
+    static io::RecvFuture<ReadPolicy> recv(EventExecutor *reactor,
+            std::shared_ptr<Socket> socket, ReadPolicy&& policy)
     {
-        return RecvFuture<ReadPolicy>(reactor, std::move(socket), std::forward<ReadPolicy>(policy));
+        return io::RecvFuture<ReadPolicy>(
+               folly::make_unique<SocketIOHandler>(reactor, socket),
+               std::forward<ReadPolicy>(policy));
     }
 
 };
