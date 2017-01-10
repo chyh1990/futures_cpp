@@ -2,7 +2,6 @@
 
 #include <futures/Future.h>
 #include <futures/Core.h>
-#include <boost/variant.hpp>
 
 namespace futures {
 

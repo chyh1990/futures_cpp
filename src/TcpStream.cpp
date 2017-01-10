@@ -118,7 +118,7 @@ void Socket::tcpServer(const std::string& bindaddr, uint16_t port,
     }
 
     strcpy(addr_buf, bindaddr.c_str());
-    int fd = anetTcpServer(buf, port, addr_buf, backlog, true);
+    int fd = anetTcpServer(buf, port, addr_buf, backlog, false);
     if (fd < 0) {
         ec = current_system_error();
         return;
@@ -149,6 +149,11 @@ again:
     } else {
         char buf[ANET_ERR_LEN];
         if (anetNonBlock(buf, fd)) {
+            ec = current_system_error();
+            ::close(fd);
+            return Socket();
+        }
+        if (anetEnableTcpNoDelay(buf, fd)) {
             ec = current_system_error();
             ::close(fd);
             return Socket();

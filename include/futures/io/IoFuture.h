@@ -2,10 +2,79 @@
 
 #include <futures/io/Io.h>
 #include <futures/Future.h>
+#include <futures/Stream.h>
 #include <futures/EventExecutor.h>
 
 namespace futures {
 namespace io {
+
+template <typename CODEC>
+class Framed : public StreamBase<Framed<CODEC>, typename CODEC::In> {
+public:
+    using Item = typename CODEC::In;
+
+    const static size_t kRdBufSize = 16 * 1024;
+
+    Poll<Optional<Item>> poll() override {
+        while (true) {
+            if (readable_) {
+                if (eof_) {
+                    if (!rdbuf_->length())
+                        return makePollReady(Optional<Item>());
+                    auto f = codec_.decode_eof(rdbuf_);
+                    if (f.hasException())
+                        return Poll<Optional<Item>>(f.exception());
+                    return makePollReady(Optional<Item>(folly::moveFromTry(f)));
+                }
+                auto f = codec_.decode(rdbuf_);
+                if (f.hasException())
+                    return Poll<Optional<Item>>(f.exception());
+                if (f->hasValue()) {
+                    return makePollReady(folly::moveFromTry(f));
+                } else {
+                    readable_ = false;
+                }
+            }
+            assert(!eof_);
+            // XXX use iovec
+            rdbuf_->unshare();
+            if (rdbuf_->headroom())
+                rdbuf_->retreat(rdbuf_->headroom());
+            if (!rdbuf_->tailroom())
+                rdbuf_->reserve(0, kRdBufSize);
+            std::error_code ec;
+            ssize_t len = io_->read(rdbuf_.get(), rdbuf_->tailroom(), ec);
+            if (ec == std::make_error_code(std::errc::connection_aborted)) {
+                assert(len == 0);
+                eof_ = true;
+                readable_ = true;
+            } else if (ec) {
+                return Poll<Optional<Item>>(IOError("read frame", ec));
+            } else if (len == 0) {
+                if (io_->poll_read().isReady()) {
+                    continue;
+                } else {
+                    return Poll<Optional<Item>>(not_ready);
+                }
+            } else {
+                assert(len > 0);
+                rdbuf_->append(len);
+                readable_ = true;
+            }
+        }
+    }
+
+    Framed(std::unique_ptr<Io> io)
+        : io_(std::move(io)), eof_(false), readable_(false),
+          rdbuf_(folly::IOBuf::create(kRdBufSize)) {
+    }
+private:
+    std::unique_ptr<Io> io_;
+    CODEC codec_;
+    bool eof_;
+    bool readable_;
+    std::unique_ptr<folly::IOBuf> rdbuf_;
+};
 
 class DescriptorIo : public io::Io, public EventWatcherBase {
 public:
@@ -92,6 +161,7 @@ public:
                     io_.reset();
                     return Poll<Item>(IOError("send", ec));
                 } else if (len == 0) {
+                    std::cerr <<"BBB" << std::endl;
                     if (io_->poll_write().isNotReady()) {
                         s_ = INIT;
                     } else {
@@ -195,20 +265,18 @@ public:
                     return Poll<Item>(IOError("recv", ec));
                 } else if (len == 0) {
                     s_ = INIT;
-                    if (io_->poll_read().isNotReady()) {
-                        break;
-                    } else {
-                        goto retry;
-                    }
                 } else {
                     buf_->append(len);
                     if (policy_.read(len)) {
                         s_ = DONE;
                         io_.reset();
                         return Poll<Item>(Async<Item>(std::move(buf_)));
-                    } else {
-                        s_ = INIT;
                     }
+                }
+                if (io_->poll_read().isNotReady()) {
+                    break;
+                } else {
+                    goto retry;
                 }
                 break;
             }

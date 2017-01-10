@@ -3,19 +3,36 @@
 #include <system_error>
 #include <futures/Core.h>
 #include <futures/Async.h>
+#include <futures/Exception.h>
 #include <futures/core/IOBuf.h>
 
 namespace futures {
 namespace io {
 
-template <typename U, typename V>
+template <class Derived, typename U, typename V>
 class Codec {
 public:
     using In = U;
     using Out = V;
 
-    Try<Optional<In>> decode(folly::IOBuf *buf);
-    Try<Optional<Out>> encode(folly::IOBuf *buf);
+    Try<Optional<In>> decode(std::unique_ptr<folly::IOBuf> &buf) {
+        assert(0 && "unimpl");
+    }
+
+    Try<In> decode_eof(std::unique_ptr<folly::IOBuf> &buf) {
+        auto v = static_cast<Derived*>(this)->decode(buf);
+        if (v.hasException())
+            return Try<In>(v.exception());
+        if (v->hasValue()) {
+            return Try<In>(folly::moveFromTry(v).value());
+        } else {
+            return Try<In>(IOError("eof"));
+        }
+    }
+
+    Try<Optional<Out>> encode(folly::IOBuf *buf) {
+        assert(0 && "unimpl");
+    }
 };
 
 class Readable {
@@ -40,7 +57,6 @@ public:
 
     virtual ~Io() = default;
 };
-
 
 }
 }
