@@ -3,13 +3,15 @@
 #include <futures/io/Io.h>
 #include <futures/Future.h>
 #include <futures/Stream.h>
+#include <futures/AsyncSink.h>
 #include <futures/EventExecutor.h>
 
 namespace futures {
 namespace io {
 
 template <typename CODEC>
-class Framed : public StreamBase<Framed<CODEC>, typename CODEC::In> {
+class FramedStream :
+    public StreamBase<FramedStream<CODEC>, typename CODEC::In> {
 public:
     using Item = typename CODEC::In;
 
@@ -49,6 +51,7 @@ public:
                 eof_ = true;
                 readable_ = true;
             } else if (ec) {
+                io_.reset();
                 return Poll<Optional<Item>>(IOError("read frame", ec));
             } else if (len == 0) {
                 if (io_->poll_read().isReady()) {
@@ -64,7 +67,7 @@ public:
         }
     }
 
-    Framed(std::unique_ptr<Io> io)
+    FramedStream(std::unique_ptr<Io> io)
         : io_(std::move(io)), eof_(false), readable_(false),
           rdbuf_(folly::IOBuf::create(kRdBufSize)) {
     }
@@ -76,21 +79,82 @@ private:
     std::unique_ptr<folly::IOBuf> rdbuf_;
 };
 
+template <typename CODEC>
+class FramedSink :
+    public AsyncSinkBase<FramedSink<CODEC>, typename CODEC::Out> {
+public:
+    using Out = typename CODEC::Out;
+    const static size_t kWrBufSize = 16 * 1024;
+
+    FramedSink(std::unique_ptr<Io> io)
+        : io_(std::move(io)),
+          wrbuf_(folly::IOBuf::create(kWrBufSize)) {
+    }
+
+    StartSend<Out> startSend(Out&& item) override {
+        if (wrbuf_->length() > kWrBufSize) {
+            auto r = pollComplete();
+            if (r.hasException())
+                return StartSend<Out>(r.exception());
+            if (wrbuf_->length() > kWrBufSize) {
+                FUTURES_DLOG(WARNING) << "buffer still full, reject sending frame";
+                return StartSend<Out>(folly::make_optional(std::move(item)));
+            }
+        }
+
+        auto r = codec_.encode(item, wrbuf_);
+        if (r.hasException())
+            return StartSend<Out>(r.exception());
+        auto e = pollComplete();
+        if (e.hasException())
+            return StartSend<Out>(e.exception());
+        return StartSend<Out>(folly::none);
+    }
+
+    Poll<folly::Unit> pollComplete() override {
+        FUTURES_DLOG(INFO) << "flushing frame";
+        while (wrbuf_->length()) {
+            std::error_code ec;
+            ssize_t len = io_->write(*wrbuf_.get(), wrbuf_->length(), ec);
+            if (ec) {
+                io_.reset();
+                return Poll<folly::Unit>(IOError("pollComplete", ec));
+            } else if (len == 0) {
+                if (io_->poll_write().isReady())
+                    continue;
+                return Poll<folly::Unit>(not_ready);
+            } else {
+                wrbuf_->trimStart(len);
+            }
+        }
+        assert(wrbuf_->length() == 0);
+        wrbuf_->retreat(wrbuf_->headroom());
+        return makePollReady(folly::Unit());
+    }
+
+private:
+    std::unique_ptr<Io> io_;
+    CODEC codec_;
+    std::unique_ptr<folly::IOBuf> wrbuf_;
+};
+
 class DescriptorIo : public io::Io, public EventWatcherBase {
 public:
     DescriptorIo(EventExecutor* reactor, int fd)
-        : reactor_(reactor), io_(reactor->getLoop()), fd_(fd) {
+        : reactor_(reactor), rio_(reactor->getLoop()),
+        wio_(reactor_->getLoop()), fd_(fd) {
         assert(reactor_);
-        assert(fd >= 0);
+        if (fd < 0) throw IOError("invalid fd");
         // reactor_->linkWatcher(this);
-        io_.set<DescriptorIo, &DescriptorIo::onEvent>(this);
+        rio_.set<DescriptorIo, &DescriptorIo::onEvent>(this);
+        wio_.set<DescriptorIo, &DescriptorIo::onEvent>(this);
     }
 
     Async<folly::Unit> poll_read() override {
         assert(!event_hook_.is_linked());
         reactor_->linkWatcher(this);
         task_ = CurrentTask::park();
-        io_.start(fd_, ev::READ);
+        rio_.start(fd_, ev::READ);
         return not_ready;
     }
 
@@ -98,12 +162,13 @@ public:
         assert(!event_hook_.is_linked());
         reactor_->linkWatcher(this);
         task_ = CurrentTask::park();
-        io_.start(fd_, ev::WRITE);
+        wio_.start(fd_, ev::WRITE);
         return not_ready;
     }
 
     void cleanup(int reason) override {
-        io_.stop();
+        rio_.stop();
+        wio_.stop();
         if (task_) task_->unpark();
     }
 
@@ -113,7 +178,8 @@ public:
 
 private:
     EventExecutor* reactor_;
-    ev::io io_;
+    ev::io rio_;
+    ev::io wio_;
     int fd_;
     Optional<Task> task_;
 
@@ -128,7 +194,8 @@ private:
     }
 
     void clear() {
-        io_.stop();
+        rio_.stop();
+        wio_.stop();
         if (event_hook_.is_linked())
             reactor_->unlinkWatcher(this);
         task_.clear();
@@ -161,7 +228,6 @@ public:
                     io_.reset();
                     return Poll<Item>(IOError("send", ec));
                 } else if (len == 0) {
-                    std::cerr <<"BBB" << std::endl;
                     if (io_->poll_write().isNotReady()) {
                         s_ = INIT;
                     } else {

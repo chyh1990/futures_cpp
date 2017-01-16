@@ -30,7 +30,8 @@ public:
         }
     }
 
-    Try<Optional<Out>> encode(folly::IOBuf *buf) {
+    Try<folly::Unit> encode(const Out& out,
+            std::unique_ptr<folly::IOBuf> &buf) {
         assert(0 && "unimpl");
     }
 };

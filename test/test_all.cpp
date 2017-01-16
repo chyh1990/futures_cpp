@@ -33,6 +33,7 @@ TEST(Future, Trait) {
 	EXPECT_TRUE(std::is_move_constructible<OkFuture<int>>::value);
 }
 
+#if 0
 TEST(Future, Empty) {
 	auto f = makeEmpty<int>();
 	auto p = f.poll();
@@ -41,6 +42,7 @@ TEST(Future, Empty) {
 	EXPECT_TRUE(v.isNotReady());
 	auto v1 = v.map([] (int v) { return std::to_string(v); });
 }
+#endif
 
 TEST(Future, Err) {
 	auto f = ErrFuture<int>(folly::make_exception_wrapper<std::runtime_error>("bad"));

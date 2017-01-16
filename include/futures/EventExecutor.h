@@ -18,14 +18,25 @@ public:
 
     void execute(std::unique_ptr<Runnable> run) override {
         if (wait_stop_) return;
-        q_.push_back(*run.release());
+        auto cur = CurrentExecutor::current();
+        if (cur && cur != this) {
+            FUTURES_DLOG(INFO) << "foreign execute: " << run.get();
+            std::lock_guard<std::mutex> _g(mu_);
+            if (wait_stop_) return;
+            foreign_q_.push_back(*run.release());
+            signal_loop();
+        } else {
+            q_.push_back(*run.release());
+        }
     }
 
+#if 0
     void execute_other(std::unique_ptr<Runnable> run) {
         std::lock_guard<std::mutex> _g(mu_);
         if (wait_stop_) return;
         foreign_q_.push_back(*run.release());
     }
+#endif
 
     void stop() override {
         wait_stop_ = true;
@@ -41,13 +52,7 @@ public:
     void spawn(Fut&& fut) {
         auto ptr = folly::make_unique<FutureSpawnRun>(this,
                     FutureSpawn<BoxedFuture<folly::Unit>>(fut.boxed()));
-        auto cur = CurrentExecutor::current();
-        if (cur && cur != this) {
-            execute_other(std::move(ptr));
-            signal_loop();
-        } else {
-            execute(std::move(ptr));
-        }
+        execute(std::move(ptr));
     }
 
     static EventExecutor *current() {

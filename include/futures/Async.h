@@ -14,6 +14,7 @@ class AsyncNotReadyException : public std::runtime_error {
       : std::runtime_error("Not ready Async cannot be unwrapped") {}
 };
 
+#if 0
 namespace detail { struct NotReadyHelper {}; }
 
 typedef int detail::NotReadyHelper::*NotReady;
@@ -135,6 +136,23 @@ private:
     State state_;
     T v_;
 };
+#endif
+
+template <typename T>
+class Async : public Optional<T> {
+public:
+  bool isReady() const { return Optional<T>::hasValue(); }
+  bool isNotReady() const { return !isReady(); }
+
+  Async() {}
+
+  Async(T&& v): Optional<T>(std::move(v)) {}
+  Async(const T& v): Optional<T>(v) {}
+  /* implicit */ Async(const folly::None&) noexcept {
+  }
+};
+
+const folly::None not_ready = nullptr;
 
 template <typename T>
 using Poll = Try<Async<T>>;
