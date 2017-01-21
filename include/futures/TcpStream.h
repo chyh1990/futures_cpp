@@ -64,12 +64,12 @@ public:
             FUTURES_DLOG(INFO) << "SocketIOHandler delete";
     }
 
-    ssize_t read(folly::IOBuf *buf, size_t len, std::error_code &ec) override {
-        return socket_->recv(buf->writableTail(), len, 0, ec);
+    ssize_t read(void *buf, size_t len, std::error_code &ec) override {
+        return socket_->recv(buf, len, 0, ec);
     }
 
-    ssize_t write(const folly::IOBuf &buf, size_t len, std::error_code &ec) override {
-        return socket_->send(buf.data(), len, 0, ec);
+    ssize_t write(const void *buf, size_t len, std::error_code &ec) override {
+        return socket_->send(buf, len, 0, ec);
     }
 
     Socket *getSocket() { return socket_.get(); }

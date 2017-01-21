@@ -28,6 +28,7 @@ public:
                         return Poll<Optional<Item>>(f.exception());
                     return makePollReady(Optional<Item>(folly::moveFromTry(f)));
                 }
+                FUTURES_DLOG(INFO) << "RDBUF: " << rdbuf_->length();
                 auto f = codec_.decode(rdbuf_);
                 if (f.hasException())
                     return Poll<Optional<Item>>(f.exception());
@@ -45,7 +46,7 @@ public:
             if (!rdbuf_->tailroom())
                 rdbuf_->reserve(0, kRdBufSize);
             std::error_code ec;
-            ssize_t len = io_->read(rdbuf_.get(), rdbuf_->tailroom(), ec);
+            ssize_t len = io_->read(rdbuf_->writableTail(), rdbuf_->tailroom(), ec);
             if (ec == std::make_error_code(std::errc::connection_aborted)) {
                 assert(len == 0);
                 eof_ = true;
@@ -91,31 +92,28 @@ public:
           wrbuf_(folly::IOBuf::create(kWrBufSize)) {
     }
 
-    StartSend<Out> startSend(Out&& item) override {
+    Try<bool> startSend(Out& item) override {
         if (wrbuf_->length() > kWrBufSize) {
             auto r = pollComplete();
             if (r.hasException())
-                return StartSend<Out>(r.exception());
+                return Try<bool>(r.exception());
             if (wrbuf_->length() > kWrBufSize) {
                 FUTURES_DLOG(WARNING) << "buffer still full, reject sending frame";
-                return StartSend<Out>(folly::make_optional(std::move(item)));
+                return Try<bool>(false);
             }
         }
 
         auto r = codec_.encode(item, wrbuf_);
         if (r.hasException())
-            return StartSend<Out>(r.exception());
-        auto e = pollComplete();
-        if (e.hasException())
-            return StartSend<Out>(e.exception());
-        return StartSend<Out>(folly::none);
+            return Try<bool>(r.exception());
+        return Try<bool>(true);
     }
 
     Poll<folly::Unit> pollComplete() override {
         FUTURES_DLOG(INFO) << "flushing frame";
         while (wrbuf_->length()) {
             std::error_code ec;
-            ssize_t len = io_->write(*wrbuf_.get(), wrbuf_->length(), ec);
+            ssize_t len = io_->write(wrbuf_->data(), wrbuf_->length(), ec);
             if (ec) {
                 io_.reset();
                 return Poll<folly::Unit>(IOError("pollComplete", ec));
@@ -141,20 +139,19 @@ private:
 class DescriptorIo : public io::Io, public EventWatcherBase {
 public:
     DescriptorIo(EventExecutor* reactor, int fd)
-        : reactor_(reactor), rio_(reactor->getLoop()),
-        wio_(reactor_->getLoop()), fd_(fd) {
+        : reactor_(reactor), io_(reactor->getLoop()),
+        fd_(fd) {
         assert(reactor_);
         if (fd < 0) throw IOError("invalid fd");
         // reactor_->linkWatcher(this);
-        rio_.set<DescriptorIo, &DescriptorIo::onEvent>(this);
-        wio_.set<DescriptorIo, &DescriptorIo::onEvent>(this);
+        io_.set<DescriptorIo, &DescriptorIo::onEvent>(this);
     }
 
     Async<folly::Unit> poll_read() override {
         assert(!event_hook_.is_linked());
         reactor_->linkWatcher(this);
         task_ = CurrentTask::park();
-        rio_.start(fd_, ev::READ);
+        io_.start(fd_, ev::READ);
         return not_ready;
     }
 
@@ -162,13 +159,12 @@ public:
         assert(!event_hook_.is_linked());
         reactor_->linkWatcher(this);
         task_ = CurrentTask::park();
-        wio_.start(fd_, ev::WRITE);
+        io_.start(fd_, ev::WRITE);
         return not_ready;
     }
 
     void cleanup(int reason) override {
-        rio_.stop();
-        wio_.stop();
+        io_.stop();
         if (task_) task_->unpark();
     }
 
@@ -178,8 +174,7 @@ public:
 
 private:
     EventExecutor* reactor_;
-    ev::io rio_;
-    ev::io wio_;
+    ev::io io_;
     int fd_;
     Optional<Task> task_;
 
@@ -187,15 +182,12 @@ private:
         if (revent & ev::ERROR)
             throw EventException("syscall error");
         FUTURES_DLOG(INFO) << "EVENT: " << fd_ << " " << task_.hasValue();
-        if (event_hook_.is_linked())
-            reactor_->unlinkWatcher(this);
         if (task_) task_->unpark();
-        task_.clear();
+        clear();
     }
 
     void clear() {
-        rio_.stop();
-        wio_.stop();
+        io_.stop();
         if (event_hook_.is_linked())
             reactor_->unlinkWatcher(this);
         task_.clear();
@@ -223,7 +215,7 @@ public:
         switch (s_) {
             case INIT: {
                 // register event
-                ssize_t len = io_->write(*buf_.get(), buf_->length(), ec);
+                ssize_t len = io_->write(buf_->data(), buf_->length(), ec);
                 if (ec) {
                     io_.reset();
                     return Poll<Item>(IOError("send", ec));

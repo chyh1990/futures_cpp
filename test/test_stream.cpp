@@ -4,6 +4,7 @@
 #include <futures/TcpStream.h>
 #include <futures/http/HttpCodec.h>
 #include <futures/io/PipelinedRpcFuture.h>
+#include <futures/io/IoStream.h>
 
 using namespace futures;
 
@@ -134,9 +135,9 @@ public:
 };
 
 static BoxedFuture<folly::Unit> process_http(EventExecutor &ev, tcp::SocketPtr client) {
-#if 0
+#if 1
     return io::FramedStream<http::HttpV1Codec>(folly::make_unique<tcp::SocketIOHandler>(&ev, client))
-            .forEach([] (http::Result v) {
+            .forEach([] (http::Request v) {
                 std::cerr << "V: " << v << std::endl;
             })
             .then([] (Try<folly::Unit> err) {
@@ -146,11 +147,12 @@ static BoxedFuture<folly::Unit> process_http(EventExecutor &ev, tcp::SocketPtr c
                 return makeOk();
             })
             .boxed();
-#endif
+#else
     io::FramedStream<http::HttpV1Codec> source(folly::make_unique<tcp::SocketIOHandler>(&ev, client));
     io::FramedSink<http::HttpV1Codec> sink(folly::make_unique<tcp::SocketIOHandler>(&ev, client));
     auto service = std::make_shared<DummyService>();
     return PipelinedRpcFuture<http::HttpV1Codec>(service, std::move(source), std::move(sink)).boxed();
+#endif
 }
 
 TEST(Stream, Http) {

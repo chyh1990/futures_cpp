@@ -178,5 +178,30 @@ Try<folly::Unit> HttpV1Codec::encode(const http::Response& out,
     return Try<folly::Unit>(folly::Unit());
 }
 
+#if 0
+void HttpV1Handler::read(HttpV1Handler::Context* ctx, folly::IOBufQueue &msg) {
+    while (!msg.empty()) {
+        auto front = msg.pop_front();
+
+        size_t nparsed = http_parser_execute(&impl_->parser_, &impl_->settings_,
+                (const char*)front->data(), front->length());
+        if (impl_->parser_.upgrade) {
+            throw IOError("unsupported");
+        } else if (nparsed != front->length()) {
+            throw IOError("invalid http request");
+        }
+        if (impl_->completed_) {
+            FUTURES_DLOG(INFO) << "new req: ";
+            ctx->fireRead(impl_->moveRequest());
+        }
+    }
+}
+
+HttpV1Handler::HttpV1Handler()
+    : impl_(new Parser()) {
+    }
+HttpV1Handler::~HttpV1Handler() = default;
+#endif
+
 }
 }

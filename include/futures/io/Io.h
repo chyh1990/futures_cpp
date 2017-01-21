@@ -38,12 +38,12 @@ public:
 
 class Readable {
 public:
-    virtual ssize_t read(folly::IOBuf *buf, size_t len, std::error_code &ec) = 0;
+    virtual ssize_t read(void *buf, size_t len, std::error_code &ec) = 0;
 };
 
 class Writable {
 public:
-    virtual ssize_t write(const folly::IOBuf &buf, size_t len, std::error_code &ec) = 0;
+    virtual ssize_t write(const void *buf, size_t len, std::error_code &ec) = 0;
 };
 
 class Io : public Readable, public Writable {

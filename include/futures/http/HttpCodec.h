@@ -51,5 +51,18 @@ private:
     std::unique_ptr<Parser> impl_;
 };
 
+#if 0
+class HttpV1Handler : public InboundHandler<folly::IOBufQueue&, Request> {
+public:
+  typedef typename InboundHandler<folly::IOBufQueue&, Request>::Context Context;
+  void read(Context* ctx, folly::IOBufQueue &msg) override;
+
+  HttpV1Handler();
+  ~HttpV1Handler();
+private:
+    std::unique_ptr<Parser> impl_;
+};
+#endif
+
 }
 }
