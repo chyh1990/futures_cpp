@@ -5,6 +5,7 @@
 #include <futures/Async.h>
 #include <futures/Exception.h>
 #include <futures/core/IOBuf.h>
+#include <futures/core/IOBufQueue.h>
 
 namespace futures {
 namespace io {
@@ -30,8 +31,8 @@ public:
         }
     }
 
-    Try<folly::Unit> encode(const Out& out,
-            std::unique_ptr<folly::IOBuf> &buf) {
+    Try<void> encode(Out&& out,
+            folly::IOBufQueue &buf) {
         assert(0 && "unimpl");
     }
 };
@@ -43,7 +44,14 @@ public:
 
 class Writable {
 public:
-    virtual ssize_t write(const void *buf, size_t len, std::error_code &ec) = 0;
+    virtual ssize_t write(const void *buf, size_t len, std::error_code &ec) {
+        iovec vec[1];
+        vec[0].iov_base = const_cast<void*>(buf);
+        vec[0].iov_len = len;
+        return writev(vec, 1, ec);
+    }
+
+    virtual ssize_t writev(const iovec *buf, size_t veclen, std::error_code &ec) = 0;
 };
 
 class Io : public Readable, public Writable {

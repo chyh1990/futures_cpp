@@ -29,7 +29,11 @@ std::ostream& operator<< (std::ostream& stream, const Request& o);
 struct Response {
     unsigned int http_errno;
     std::unordered_map<std::string, std::string> headers;
-    std::string body;
+    folly::IOBufQueue body;
+
+    Response()
+      : body(folly::IOBufQueue::cacheChainLength())
+    {}
 };
 
 class HttpV1Codec: public io::Codec<HttpV1Codec, Request, int64_t> {
@@ -42,8 +46,8 @@ public:
 
     Try<Optional<In>> decode(std::unique_ptr<folly::IOBuf> &buf);
 
-    Try<folly::Unit> encode(const Out& out,
-            std::unique_ptr<folly::IOBuf> &buf);
+    Try<void> encode(Out& out,
+            folly::IOBufQueue &buf);
 
     HttpV1Codec(HttpV1Codec&&);
     HttpV1Codec& operator=(HttpV1Codec&&);

@@ -1,5 +1,6 @@
 #include <futures/EventExecutor.h>
 #include <futures/Signal.h>
+#include <futures/Timer.h>
 #include <futures/TcpStream.h>
 #include <futures/http/HttpCodec.h>
 #include <futures/io/PipelinedRpcFuture.h>
@@ -12,14 +13,24 @@ using namespace futures;
 class DummyService: public Service<http::Request, http::Response> {
 public:
     BoxedFuture<http::Response> operator()(http::Request req) {
+#ifndef NDEBUG
         std::cerr << req << std::endl;
+        return delay(EventExecutor::current(), 1.0)
+          .andThen([] (std::error_code ec) {
+              http::Response resp;
+              resp.body.append("TESTX", 5);
+              // resp.body = "XXXXX";
+              return makeOk(std::move(resp));
+          }).boxed();
+#else
         http::Response resp;
-        // resp.http_errno = 200;
-        resp.body = "XXXXX";
+        resp.body.append("TESTX", 5);
         return makeOk(std::move(resp)).boxed();
+#endif
     }
 };
 
+#if 0
 class BytesWriteSink :
   public AsyncSinkBase<BytesWriteSink, std::unique_ptr<folly::IOBuf>> {
 public:
@@ -48,7 +59,6 @@ private:
   std::unique_ptr<folly::IOBuf> q_;
 };
 
-#if 0
 class BytesWriteSinkAdapter :
   public OutboundHandler<http::Response, std::unique_ptr<folly::IOBuf>> {
 public:

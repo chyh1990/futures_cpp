@@ -3,6 +3,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <climits>
 
 extern "C" {
 #include "libae/anet.h"
@@ -68,12 +69,25 @@ bool Socket::is_connected(std::error_code &ec)
     }
 }
 
-ssize_t Socket::send(const void *buf, size_t len, int flags, std::error_code &ec)
+ssize_t Socket::writev(const iovec *vec, size_t veclen, int flags, std::error_code &ec)
 {
     assert(fd_ >= 0);
+    struct msghdr msg;
+    msg.msg_name = nullptr;
+    msg.msg_namelen = 0;
+    msg.msg_iov = const_cast<iovec *>(vec);
+    msg.msg_iovlen = std::min<size_t>(veclen, IOV_MAX);
+    msg.msg_control = nullptr;
+    msg.msg_controllen = 0;
+    msg.msg_flags = 0;
+
+    int msg_flags = MSG_DONTWAIT;
+
+    msg_flags |= MSG_NOSIGNAL;
+
 again:
-    ssize_t sent = ::send(fd_, buf, len, flags | MSG_NOSIGNAL);
-    if (sent == -1) {
+    ssize_t sent = ::sendmsg(fd_, &msg, msg_flags);
+    if (sent < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             return 0;
         if (errno == EINTR)
@@ -166,40 +180,40 @@ Poll<SocketPtr> ConnectFuture::poll() {
     std::error_code ec;
     switch (s_) {
         case INIT: {
-            bool b = io_->getSocket()->connect(addr_, port_, ec);
-            if (ec) {
-                return Poll<Item>(IOError("connect", ec));
-            } else if (b) {
-                s_ = CONNECTED;
-                auto p = io_->getSocketPtr();
-                io_.reset();
-                return makePollReady(p);
-            } else {
-                io_->poll_read();
-                s_ = CONNECTING;
-            }
-            break;
-        }
+                       bool b = io_->getSocket()->connect(addr_, port_, ec);
+                       if (ec) {
+                           return Poll<Item>(IOError("connect", ec));
+                       } else if (b) {
+                           s_ = CONNECTED;
+                           auto p = io_->getSocketPtr();
+                           io_.reset();
+                           return makePollReady(p);
+                       } else {
+                           io_->poll_read();
+                           s_ = CONNECTING;
+                       }
+                       break;
+                   }
         case CONNECTING: {
-            assert(io_);
-            bool b = io_->getSocket()->is_connected(ec);
-            if (ec) {
-                io_.reset();
-                return Poll<Item>(IOError("is_connect", ec));
-            }
-            if (b) {
-                auto p = io_->getSocketPtr();
-                io_.reset();
-                s_ = CONNECTED;
-                return makePollReady(p);
-                // connected
-            }
-            break;
-        }
+                             assert(io_);
+                             bool b = io_->getSocket()->is_connected(ec);
+                             if (ec) {
+                                 io_.reset();
+                                 return Poll<Item>(IOError("is_connect", ec));
+                             }
+                             if (b) {
+                                 auto p = io_->getSocketPtr();
+                                 io_.reset();
+                                 s_ = CONNECTED;
+                                 return makePollReady(p);
+                                 // connected
+                             }
+                             break;
+                         }
         case CANCELLED:
-            return Poll<Item>(FutureCancelledException());
+                         return Poll<Item>(FutureCancelledException());
         default:
-            throw InvalidPollStateException();
+                         throw InvalidPollStateException();
     }
 
     return Poll<Item>(not_ready);
@@ -212,27 +226,27 @@ void ConnectFuture::cancel() {
 
 Poll<Optional<SocketPtr>> AcceptStream::poll() {
     switch (s_) {
-    case INIT:
-        s_ = ACCEPTING;
-        // fall through
-    case ACCEPTING: {
-        // libev is level-triggered, just need to accept once
-        std::error_code ec;
-        Socket s = io_->getSocket()->accept(ec);
-        if (ec) {
-            io_.reset();
-            return Poll<Optional<Item>>(IOError("accept", ec));
-        }
-        if (s.isValid()) {
-            auto p = std::make_shared<Socket>(std::move(s));
-            return makePollReady(folly::make_optional(p));
-        } else {
-            io_->poll_read();
-        }
-        break;
-    }
-    default:
-        throw InvalidPollStateException();
+        case INIT:
+            s_ = ACCEPTING;
+            // fall through
+        case ACCEPTING: {
+                            // libev is level-triggered, just need to accept once
+                            std::error_code ec;
+                            Socket s = io_->getSocket()->accept(ec);
+                            if (ec) {
+                                io_.reset();
+                                return Poll<Optional<Item>>(IOError("accept", ec));
+                            }
+                            if (s.isValid()) {
+                                auto p = std::make_shared<Socket>(std::move(s));
+                                return makePollReady(folly::make_optional(p));
+                            } else {
+                                io_->poll_read();
+                            }
+                            break;
+                        }
+        default:
+                        throw InvalidPollStateException();
     }
     return Poll<Optional<Item>>(not_ready);
 }

@@ -131,6 +131,7 @@ makePipelineFuture(ReadStream&& stream, std::shared_ptr<Service> service, WriteS
             std::forward<WriteSink>(sink));
 }
 
+#if 0
 template <typename Pipeline, typename ReadStream, typename WriteSink>
 class PipelinedFuture : public FutureBase<PipelinedFuture<Pipeline, ReadStream, WriteSink>, folly::Unit> {
 public:
@@ -167,5 +168,6 @@ private:
     pipeline_ptr pipeline_;
     // State s_ = INIT;
 };
+#endif
 
 }

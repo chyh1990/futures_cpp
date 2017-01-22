@@ -1,6 +1,7 @@
 #pragma once
 
 #include <futures/io/Io.h>
+#include <futures/core/IOBufQueue.h>
 #include <futures/Future.h>
 #include <futures/Stream.h>
 #include <futures/AsyncSink.h>
@@ -15,7 +16,7 @@ class FramedStream :
 public:
     using Item = typename CODEC::In;
 
-    const static size_t kRdBufSize = 16 * 1024;
+    const static size_t kRdBufSize = 8 * 1024;
 
     Poll<Optional<Item>> poll() override {
         while (true) {
@@ -85,55 +86,84 @@ class FramedSink :
     public AsyncSinkBase<FramedSink<CODEC>, typename CODEC::Out> {
 public:
     using Out = typename CODEC::Out;
-    const static size_t kWrBufSize = 16 * 1024;
 
     FramedSink(std::unique_ptr<Io> io)
-        : io_(std::move(io)),
-          wrbuf_(folly::IOBuf::create(kWrBufSize)) {
+        : io_(std::move(io)) {
     }
 
-    Try<bool> startSend(Out& item) override {
-        if (wrbuf_->length() > kWrBufSize) {
-            auto r = pollComplete();
-            if (r.hasException())
-                return Try<bool>(r.exception());
-            if (wrbuf_->length() > kWrBufSize) {
-                FUTURES_DLOG(WARNING) << "buffer still full, reject sending frame";
-                return Try<bool>(false);
-            }
-        }
-
-        auto r = codec_.encode(item, wrbuf_);
-        if (r.hasException())
-            return Try<bool>(r.exception());
-        return Try<bool>(true);
+    Try<void> startSend(Out& item) override {
+        return codec_.encode(item, q_);
     }
 
     Poll<folly::Unit> pollComplete() override {
-        FUTURES_DLOG(INFO) << "flushing frame";
-        while (wrbuf_->length()) {
+        const size_t kMaxIovLen = 64;
+        while (!q_.empty()) {
+            size_t chain_len = q_.front()->countChainElements();
+            FUTURES_DLOG(INFO) << "flushing frame " << chain_len;
+            size_t veclen;
             std::error_code ec;
-            ssize_t len = io_->write(wrbuf_->data(), wrbuf_->length(), ec);
+            ssize_t sent;
+            size_t countWritten, partialBytes;
+            if (chain_len <= kMaxIovLen) {
+                iovec vec[kMaxIovLen];
+                veclen = q_.front()->fillIov(vec, kMaxIovLen);
+                sent = performWrite(vec, veclen, &countWritten, &partialBytes, ec);
+            } else {
+                iovec *vec = new iovec[chain_len];
+                veclen = q_.front()->fillIov(vec, chain_len);
+                sent = performWrite(vec, veclen, &countWritten, &partialBytes, ec);
+                delete [] vec;
+            }
             if (ec) {
                 io_.reset();
                 return Poll<folly::Unit>(IOError("pollComplete", ec));
-            } else if (len == 0) {
-                if (io_->poll_write().isReady())
-                    continue;
-                return Poll<folly::Unit>(not_ready);
             } else {
-                wrbuf_->trimStart(len);
+                assert(sent >= 0);
+                if (sent > 0)
+                    q_.trimStart(sent);
+                if (countWritten < veclen) {
+                    if (!io_->poll_write().isReady())
+                        return Poll<folly::Unit>(not_ready);
+                }
             }
         }
-        assert(wrbuf_->length() == 0);
-        wrbuf_->retreat(wrbuf_->headroom());
         return makePollReady(folly::Unit());
     }
 
 private:
     std::unique_ptr<Io> io_;
     CODEC codec_;
-    std::unique_ptr<folly::IOBuf> wrbuf_;
+    folly::IOBufQueue q_;
+
+    ssize_t performWrite(
+            const iovec* vec,
+            size_t count,
+            size_t* countWritten,
+            size_t* partialWritten,
+            std::error_code &ec) {
+        ssize_t totalWritten = io_->writev(vec, count, ec);
+        if (ec) return 0;
+
+        size_t bytesWritten;
+        size_t n;
+        for (bytesWritten = totalWritten, n = 0; n < count; ++n) {
+            const iovec* v = vec + n;
+            if (v->iov_len > bytesWritten) {
+                // Partial write finished in the middle of this iovec
+                *countWritten = n;
+                *partialWritten = bytesWritten;
+                return totalWritten;
+            }
+
+            bytesWritten -= v->iov_len;
+        }
+
+        assert(bytesWritten == 0);
+        *countWritten = n;
+        *partialWritten = 0;
+        return totalWritten;
+    }
+
 };
 
 class DescriptorIo : public io::Io, public EventWatcherBase {
@@ -148,18 +178,20 @@ public:
     }
 
     Async<folly::Unit> poll_read() override {
-        assert(!event_hook_.is_linked());
-        reactor_->linkWatcher(this);
-        task_ = CurrentTask::park();
-        io_.start(fd_, ev::READ);
+        if(!event_hook_.is_linked()) {
+            reactor_->linkWatcher(this);
+            task_ = CurrentTask::park();
+            io_.start(fd_, ev::READ);
+        }
         return not_ready;
     }
 
     Async<folly::Unit> poll_write() override {
-        assert(!event_hook_.is_linked());
-        reactor_->linkWatcher(this);
-        task_ = CurrentTask::park();
-        io_.start(fd_, ev::WRITE);
+        if(!event_hook_.is_linked()) {
+            reactor_->linkWatcher(this);
+            task_ = CurrentTask::park();
+            io_.start(fd_, ev::WRITE);
+        }
         return not_ready;
     }
 

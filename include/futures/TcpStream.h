@@ -23,7 +23,7 @@ public:
     void tcpServer(const std::string& bindaddr, uint16_t port, int backlog, std::error_code &ec);
 
     void close() noexcept;
-    ssize_t send(const void *buf, size_t len, int flags, std::error_code &ec);
+    ssize_t writev(const iovec *vec, size_t veclen, int flags, std::error_code &ec);
     ssize_t recv(void *buf, size_t len, int flags, std::error_code &ec);
     Socket accept(std::error_code& ec);
 
@@ -68,8 +68,8 @@ public:
         return socket_->recv(buf, len, 0, ec);
     }
 
-    ssize_t write(const void *buf, size_t len, std::error_code &ec) override {
-        return socket_->send(buf, len, 0, ec);
+    ssize_t writev(const iovec *vec, size_t veclen, std::error_code &ec) override {
+        return socket_->writev(vec, veclen, 0, ec);
     }
 
     Socket *getSocket() { return socket_.get(); }

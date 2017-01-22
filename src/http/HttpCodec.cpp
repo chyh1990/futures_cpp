@@ -148,25 +148,83 @@ Try<Optional<HttpV1Codec::In>> HttpV1Codec::decode(std::unique_ptr<folly::IOBuf>
      }
 }
 
-Try<folly::Unit> HttpV1Codec::encode(const http::Response& out,
-        std::unique_ptr<folly::IOBuf> &buf) {
+template <typename CharT = char>
+class IoBufStreambuf : public std::basic_streambuf<CharT> {
+public:
+    using Base = std::basic_streambuf<CharT>;
+    using char_type = typename Base::char_type;
+    using int_type = typename Base::int_type;
+
+    IoBufStreambuf(folly::IOBufQueue *q)
+        : q_(q) {
+        assert(q);
+        char *p = static_cast<char*>(q_->writableTail());
+        Base::setp(p, p + q_->tailroom());
+    }
+
+private:
+    int_type overflow(int_type ch) override {
+        FUTURES_DLOG(INFO) << "overflow " << ch;
+        sync();
+        if (ch == std::char_traits<CharT>::eof()) {
+            return ch;
+        }
+        auto p = q_->preallocate(2000, 4000);
+        char *pc = static_cast<char*>(p.first);
+        Base::setp(pc, pc + p.second);
+        *Base::pptr() = ch;
+        Base::pbump(1);
+        return ch;
+    }
+
+    int sync() override {
+        std::ptrdiff_t n = Base::pptr() - Base::pbase();
+        if (n > 0) {
+            FUTURES_DLOG(INFO) << "FLUSHED " << n;
+            q_->postallocate(n);
+        }
+        return 0;
+    }
+
+    folly::IOBufQueue *q_;
+};
+
+#if 0
+class IoBufStream : public std::ostream {
+public:
+    IoBufStream(folly::IOBufQueue *q)
+        : buf_(q) {
+    }
+
+private:
+    IoBufStreambuf buf_;
+};
+#endif
+
+Try<void> HttpV1Codec::encode(http::Response& out,
+        folly::IOBufQueue &buf) {
 #if 1
-    std::stringstream ss;
+    IoBufStreambuf<char> sb(&buf);
+    std::ostream ss(&sb);
+
+    // std::ostringstream ss;
     ss << "HTTP/1.1 200 OK" << "\r\n";
     for (auto &e: out.headers)
         ss << e.first << ": " << e.second << "\r\n";
-    if (out.body.size()) {
-        ss << "Content-Length: " << out.body.size() << "\r\n";
+    if (!out.body.empty()) {
+        ss << "Content-Length: " << out.body.chainLength() << "\r\n";
     }
     ss << "Connection: keep-alive\r\n\r\n";
-    if (out.body.size())
-        ss << out.body;
-    auto s = ss.str();
-    FUTURES_DLOG(INFO) << "OUT: " << s;
-    size_t len = s.size();
-    buf->reserve(0, len);
-    memcpy(buf->writableTail(), s.data(), len);
-    buf->append(len);
+    // if (out.body.size())
+    //     ss << out.body;
+    // auto s = ss.str();
+    //FUTURES_DLOG(INFO) << "OUT: " << s;
+    // buf.append(s.data(), s.length());
+    ss.flush();
+    buf.append(std::move(out.body), false);
+    // buf->reserve(0, len);
+    // memcpy(buf->writableTail(), s.data(), len);
+    // buf->append(len);
 #else
     static const char *kResponse = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHELLO";
     size_t len = strlen(kResponse);
@@ -175,7 +233,7 @@ Try<folly::Unit> HttpV1Codec::encode(const http::Response& out,
     buf->append(len);
 #endif
 
-    return Try<folly::Unit>(folly::Unit());
+    return Try<void>();
 }
 
 #if 0
