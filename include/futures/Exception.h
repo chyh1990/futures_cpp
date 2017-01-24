@@ -6,9 +6,15 @@
 namespace futures {
 
 class InvalidPollStateException : public std::runtime_error {
- public:
+public:
   InvalidPollStateException()
       : std::runtime_error("Cannot poll twice") {}
+};
+
+class InvalidChannelStateException: public std::runtime_error {
+public:
+  InvalidChannelStateException()
+      : std::runtime_error("bad channel") {}
 };
 
 class MovedFutureException: public std::runtime_error {
@@ -49,6 +55,13 @@ public:
         : EventException(what + ": " + std::to_string(ec.value()) + "-" + ec.message()) {
     }
 };
+
+class DispatchException : public std::runtime_error {
+public:
+    DispatchException(const std::string& ex)
+        : std::runtime_error(ex) {}
+};
+
 
 
 }

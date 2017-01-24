@@ -5,6 +5,9 @@
 #include <futures/http/HttpCodec.h>
 #include <futures/io/PipelinedRpcFuture.h>
 #include <futures/io/IoStream.h>
+#include <futures/channel/UnboundedMPSCChannel.h>
+#include <futures/channel/ChannelStream.h>
+#include <futures/CpuPoolExecutor.h>
 
 using namespace futures;
 
@@ -54,19 +57,20 @@ TEST(Stream, Listen) {
     loop.run();
 }
 
-class IntCodec: public io::Codec<IntCodec, int64_t, int64_t> {
+class IntDecoder: public io::DecoderBase<IntDecoder, int64_t> {
 public:
-    using In = int64_t;
     using Out = int64_t;
 
-    IntCodec() {
+    IntDecoder() {
         buf_.resize(128);
     }
 
-    Try<Optional<In>> decode(std::unique_ptr<folly::IOBuf> &buf) {
-        auto p = std::find(buf->data(), buf->tail(), '\n');
-        if (p == buf->tail())
-            return Try<Optional<In>>(folly::none);
+    Try<Optional<Out>> decode(folly::IOBufQueue &buf) {
+#if 0
+        assert(!buf.empty());
+        auto p = std::find(buf.front()->data(), buf.front()->tail(), '\n');
+        if (p == buf.front()->tail())
+            return Try<Optional<Out>>(folly::none);
         size_t len = p - buf->data();
         buf_.assign((const char*)buf->data(), len);
         FUTURES_DLOG(INFO) << "GET: " << len << ", "
@@ -74,11 +78,13 @@ public:
         buf->trimStart(len + 1);
         return folly::makeTryWith([&] () {
                 int64_t v = std::stol(buf_);
-                return Optional<In>(v);
+                return Optional<Out>(v);
         });
+#endif
     }
 
-    Try<folly::Unit> encode(const Out& out,
+#if 0
+    Try<void> encode(const Out& out,
             std::unique_ptr<folly::IOBuf> &buf) {
         const int kMaxLen = 32;
         buf->reserve(0, kMaxLen);
@@ -87,12 +93,13 @@ public:
             return Try<folly::Unit>(IOError("number too long"));
         return Try<folly::Unit>();
     }
+#endif
 private:
     std::string buf_;
 };
 
 static BoxedFuture<folly::Unit> process_frame(EventExecutor &ev, tcp::SocketPtr client) {
-    return io::FramedStream<IntCodec>(
+    return io::FramedStream<IntDecoder>(
             folly::make_unique<tcp::SocketIOHandler>(&ev, client))
             .forEach([] (int64_t v) {
                 std::cerr << "V: " << v << std::endl;
@@ -136,7 +143,7 @@ public:
 
 static BoxedFuture<folly::Unit> process_http(EventExecutor &ev, tcp::SocketPtr client) {
 #if 1
-    return io::FramedStream<http::HttpV1Codec>(folly::make_unique<tcp::SocketIOHandler>(&ev, client))
+    return io::FramedStream<http::HttpV1Decoder>(folly::make_unique<tcp::SocketIOHandler>(&ev, client))
             .forEach([] (http::Request v) {
                 std::cerr << "V: " << v << std::endl;
             })
@@ -171,5 +178,37 @@ TEST(Stream, Http) {
     loop.spawn(std::move(f));
     loop.run();
 
+}
+
+TEST(Stream, Channel) {
+    EventExecutor loop;
+    CpuPoolExecutor cpu(1);
+
+    {
+        auto pipe = channel::makeUnboundedMPSCChannel<int>();
+        auto tx = std::move(pipe.first);
+        auto rx = std::move(pipe.second);
+        cpu.spawn_fn([tx] () mutable {
+            for (int i = 0; i < 3; ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                tx.send(i);
+            }
+            return makeOk();
+        });
+
+        auto printer = channel::makeReceiverStream(std::move(rx))
+            .forEach([] (int v) {
+                std::cerr << v << std::endl;
+            }).then([] (Try<folly::Unit>) {
+                EventExecutor::current()->stop();
+                return makeOk();
+            });
+
+        loop.spawn(std::move(printer));
+    }
+
+    loop.run(true);
+    FUTURES_DLOG(INFO) << "ENDED";
+    cpu.stop();
 }
 

@@ -10,26 +10,32 @@
 namespace futures {
 namespace io {
 
-template <class Derived, typename U, typename V>
-class Codec {
+template <class Derived, typename T>
+class DecoderBase {
 public:
-    using In = U;
-    using Out = V;
+    using Out = T;
 
-    Try<Optional<In>> decode(std::unique_ptr<folly::IOBuf> &buf) {
+    Try<Optional<Out>> decode(folly::IOBufQueue &buf) {
         assert(0 && "unimpl");
     }
 
-    Try<In> decode_eof(std::unique_ptr<folly::IOBuf> &buf) {
+    Try<Out> decode_eof(folly::IOBufQueue &buf) {
         auto v = static_cast<Derived*>(this)->decode(buf);
         if (v.hasException())
-            return Try<In>(v.exception());
+            return Try<Out>(v.exception());
         if (v->hasValue()) {
-            return Try<In>(folly::moveFromTry(v).value());
+            return Try<Out>(folly::moveFromTry(v).value());
         } else {
-            return Try<In>(IOError("eof"));
+            return Try<Out>(IOError("eof"));
         }
     }
+
+};
+
+template <class Derived, typename T>
+class EncoderBase {
+public:
+    using Out = T;
 
     Try<void> encode(Out&& out,
             folly::IOBufQueue &buf) {

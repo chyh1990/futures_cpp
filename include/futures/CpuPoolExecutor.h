@@ -137,6 +137,7 @@ private:
     }
 
     void worker() {
+        CurrentExecutor::WithGuard ctx_guard(CurrentExecutor::this_thread(), this);
         while (true) {
             std::unique_lock<std::mutex> g(mu_);
             while (q_.empty()) {
@@ -148,8 +149,10 @@ private:
             // q_.pop();
             g.unlock();
             if (!run) break;
-            if (run->type() == Runnable::SHUTDOWN)
+            if (run->type() == Runnable::SHUTDOWN) {
+                delete run;
                 break;
+            }
 
             run->run();
             delete run;

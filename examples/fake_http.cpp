@@ -15,9 +15,12 @@ public:
     BoxedFuture<http::Response> operator()(http::Request req) {
 #ifndef NDEBUG
         std::cerr << req << std::endl;
+        auto c = folly::makeMoveWrapper(std::move(req));
         return delay(EventExecutor::current(), 1.0)
-          .andThen([] (std::error_code ec) {
+          .andThen([c] (std::error_code ec) mutable {
               http::Response resp;
+              resp.http_errno = 200;
+              resp.body.append(std::move(c->body));
               resp.body.append("TESTX", 5);
               // resp.body = "XXXXX";
               return makeOk(std::move(resp));
@@ -80,25 +83,46 @@ private:
 static BoxedFuture<folly::Unit> process(EventExecutor *ev,
     tcp::SocketPtr client,
     std::shared_ptr<DummyService> service) {
-#if 0
-    DefaultPipeline::Ptr pipeline = DefaultPipeline::create();
-    auto sink = std::make_shared<BytesWriteSink>(
-      folly::make_unique<tcp::SocketIOHandler>(ev, client)
-    );
-    pipeline->addBack(std::make_shared<BytesWriteSinkAdapter>(sink.get()));
-    pipeline->addBack(std::make_shared<http::HttpV1Handler>());
-    pipeline->addBack(std::make_shared<SerialServerDispatcher<http::Request, http::Response>>(service));
-    pipeline->finalize();
-
-    // BytesReadStream
-    return PipelinedFuture<DefaultPipeline, io::BytesReadStream, int>(io::BytesReadStream(folly::make_unique<tcp::SocketIOHandler>(ev, client)), pipeline).boxed();
-#endif
-    return makePipelineFuture(
-        io::FramedStream<http::HttpV1Codec>(folly::make_unique<tcp::SocketIOHandler>(ev, client)),
-        service,
-        io::FramedSink<http::HttpV1Codec>(folly::make_unique<tcp::SocketIOHandler>(ev, client))
-    ).boxed();
+    return makeRpcFuture(
+      io::FramedStream<http::HttpV1Decoder>(folly::make_unique<tcp::SocketIOHandler>(ev, client)),
+      service,
+      io::FramedSink<http::HttpV1Encoder>(folly::make_unique<tcp::SocketIOHandler>(ev, client))
+    ).then([] (Try<folly::Unit> err) {
+      if (err.hasException())
+        std::cerr << err.exception().what();
+      return makeOk();
+    }).boxed();
 }
+
+class DummyWebsocketService: public Service<websocket::DataFrame, websocket::DataFrame> {
+public:
+    BoxedFuture<websocket::DataFrame> operator()(websocket::DataFrame req) override {
+      if (req.getType() == websocket::DataFrame::HANDSHAKE) {
+        std::cerr << *req.getHandshake() << std::endl;
+        // resp.body.append("TESTX", 5);
+        return makeOk(websocket::DataFrame::buildHandshakeResponse(
+              *req.getHandshake())).boxed();
+      } else {
+        throw std::invalid_argument("unimpl");
+      }
+    }
+};
+
+static BoxedFuture<folly::Unit> processWs(EventExecutor *ev,
+    tcp::SocketPtr client,
+    std::shared_ptr<DummyWebsocketService> service) {
+    return makeRpcFuture(
+      io::FramedStream<websocket::RFC6455Decoder>(folly::make_unique<tcp::SocketIOHandler>(ev, client)),
+      service,
+      io::FramedSink<websocket::RFC6455Encoder>(folly::make_unique<tcp::SocketIOHandler>(ev, client))
+    ).then([] (Try<folly::Unit> err) {
+      if (err.hasException())
+        std::cerr << err.exception().what();
+      return makeOk();
+    }).boxed();
+}
+
+
 
 int main(int argc, char *argv[])
 {
@@ -111,16 +135,18 @@ int main(int argc, char *argv[])
     EventExecutor loop(true);
     std::unique_ptr<EventExecutor> worker_loops[kWorkers];
     auto pservice = std::make_shared<DummyService>();
+    auto pWsservice = std::make_shared<DummyWebsocketService>();
 
     for (int i = 0; i < kWorkers; i++)
         worker_loops[i].reset(new EventExecutor());
 
     std::cerr << "listening: " << 8011 << std::endl;
     auto f = tcp::Stream::acceptStream(&loop, s)
-        .forEach([&worker_loops, pservice] (tcp::SocketPtr client) {
+        .forEach([&worker_loops, pservice, pWsservice] (tcp::SocketPtr client) {
                 auto loop = worker_loops[rand() % kWorkers].get();
                 // auto loop = EventExecutor::current();
                 loop->spawn(process(loop, client, pservice));
+                // loop->spawn(processWs(loop, client, pWsservice));
                 })
         .then([] (Try<folly::Unit> err) {
             if (err.hasException())

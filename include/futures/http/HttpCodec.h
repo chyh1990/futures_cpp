@@ -15,10 +15,19 @@ struct Request {
     std::string url;
     std::unordered_map<std::string, std::string> headers;
 
+    folly::IOBufQueue body;
+
+    Request() {
+        reset();
+    }
+
     void reset() {
+        err = 0;
+        method = 0;
         content_length = 0;
         headers.clear();
         url.clear();
+        body.clear();
     }
 
     friend std::ostream& operator<< (std::ostream& stream, const Request& matrix);
@@ -32,41 +41,115 @@ struct Response {
     folly::IOBufQueue body;
 
     Response()
-      : body(folly::IOBufQueue::cacheChainLength())
+      : http_errno(200),
+        body(folly::IOBufQueue::cacheChainLength())
     {}
 };
 
-class HttpV1Codec: public io::Codec<HttpV1Codec, Request, int64_t> {
+class HttpV1Decoder: public io::DecoderBase<HttpV1Decoder, Request> {
 public:
-    using In = Request;
+    using Out = Request;
+
+    HttpV1Decoder();
+    ~HttpV1Decoder();
+
+    Try<Optional<Out>> decode(folly::IOBufQueue &buf);
+
+    HttpV1Decoder(HttpV1Decoder&&);
+    HttpV1Decoder& operator=(HttpV1Decoder&&);
+private:
+    std::unique_ptr<Parser> impl_;
+};
+
+class HttpV1Encoder: public io::EncoderBase<HttpV1Encoder, Response> {
+public:
     using Out = Response;
-
-    HttpV1Codec();
-    ~HttpV1Codec();
-
-    Try<Optional<In>> decode(std::unique_ptr<folly::IOBuf> &buf);
 
     Try<void> encode(Out& out,
             folly::IOBufQueue &buf);
 
-    HttpV1Codec(HttpV1Codec&&);
-    HttpV1Codec& operator=(HttpV1Codec&&);
-private:
-    std::unique_ptr<Parser> impl_;
 };
-
-#if 0
-class HttpV1Handler : public InboundHandler<folly::IOBufQueue&, Request> {
-public:
-  typedef typename InboundHandler<folly::IOBufQueue&, Request>::Context Context;
-  void read(Context* ctx, folly::IOBufQueue &msg) override;
-
-  HttpV1Handler();
-  ~HttpV1Handler();
-private:
-    std::unique_ptr<Parser> impl_;
-};
-#endif
 
 }
+
+namespace websocket {
+
+struct Parser;
+
+class DataFrame {
+public:
+    enum type_t {
+        HANDSHAKE = 0x01,
+        HANDSHAKE_RESPONSE = 0x02,
+    };
+
+    DataFrame(type_t type)
+        : type_(type) {}
+
+    DataFrame(http::Request&& req)
+        : type_(HANDSHAKE), handshake_(std::move(req)) {}
+    DataFrame(http::Response&& r)
+        : type_(HANDSHAKE_RESPONSE), handshake_response_(std::move(r)) {}
+
+    type_t getType() const { return type_; }
+
+    const http::Request* getHandshake() const {
+        return handshake_.get_pointer();
+    }
+
+    http::Request* getHandshake() {
+        return handshake_.get_pointer();
+    }
+
+    const http::Response* getHandshakeResponse() const {
+        return handshake_response_.get_pointer();
+    }
+
+    http::Response* getHandshakeResponse() {
+        return handshake_response_.get_pointer();
+    }
+
+    static DataFrame buildHandshakeResponse(const http::Request& req);
+private:
+    type_t type_;
+    Optional<http::Request> handshake_;
+    Optional<http::Response> handshake_response_;
+};
+
+class RFC6455Decoder : public io::DecoderBase<RFC6455Decoder, DataFrame> {
+public:
+    using Out = DataFrame;
+
+    RFC6455Decoder();
+    ~RFC6455Decoder();
+
+    Try<Optional<Out>> decode(folly::IOBufQueue &buf);
+
+    RFC6455Decoder(RFC6455Decoder &&);
+    RFC6455Decoder& operator=(RFC6455Decoder &&);
+private:
+    enum State {
+        HANDSHAKING,
+        STREAMING,
+    };
+
+    State s_ = HANDSHAKING;
+
+    std::unique_ptr<http::Parser> handshake_;
+    std::unique_ptr<Parser> impl_;
+};
+
+class RFC6455Encoder : public io::EncoderBase<RFC6455Encoder, DataFrame> {
+public:
+    using Out = DataFrame;
+
+    Try<void> encode(Out& out,
+            folly::IOBufQueue &buf);
+
+private:
+    http::HttpV1Encoder http_encoder_;
+};
+
+}
+
 }

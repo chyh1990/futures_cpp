@@ -306,6 +306,14 @@ TEST(Functional, apply) {
 	EXPECT_EQ(r3_1.GetV(), 3);
 }
 
+TEST(Channel, MPSC) {
+	auto t = channel::makeUnboundedMPSCChannel<int>();
+	auto s1 = t.first;
+	auto s2 = t.first;
+	s1.send(1);
+	s1.send(2);
+	EXPECT_EQ(t.second.poll()->value(), 1);
+}
 
 int main(int argc, char* argv[]) {
 	testing::InitGoogleTest(&argc, argv);

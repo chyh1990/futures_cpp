@@ -4,16 +4,20 @@
 #include <futures/io/IoFuture.h>
 #include <futures/io/IoStream.h>
 #include <futures/Service.h>
+#include <futures/Exception.h>
 
 namespace futures {
 
 template <typename Req, typename Resp = Req>
 class PipelineDispatcher {
 public:
-    PipelineDispatcher(Service<Req, Resp>* service)
-        : service_(service) {}
+    PipelineDispatcher(Service<Req, Resp>* service,
+            size_t max_inflight = 1)
+        : service_(service), max_inflight_(max_inflight) {}
 
     void dispatch(Req&& in) {
+        if (in_flight_.size() >= max_inflight_)
+            throw DispatchException("too many inflight requests");
         auto f = (*service_)(std::move(in));
         in_flight_.push_back(std::move(f));
     }
@@ -38,12 +42,13 @@ public:
     }
 
 private:
+    const size_t max_inflight_;
     Service<Req, Resp>* service_;
     std::deque<BoxedFuture<Resp>> in_flight_;
 };
 
 template <typename ReadStream, typename WriteSink>
-class Pipelined1Future : public FutureBase<Pipelined1Future<ReadStream, WriteSink>, folly::Unit> {
+class RpcFuture : public FutureBase<RpcFuture<ReadStream, WriteSink>, folly::Unit> {
 public:
     using Item = folly::Unit;
 
@@ -62,7 +67,11 @@ public:
             auto v = folly::moveFromTry(r);
             if (v.isReady()) {
                 if (v->hasValue()) {
-                    dispatcher_.dispatch(std::move(v).value().value());
+                    try {
+                        dispatcher_.dispatch(std::move(v).value().value());
+                    } catch (std::exception &e) {
+                        return Poll<Item>(folly::exception_wrapper(std::current_exception(), e));
+                    }
                 } else {
                     // read-side closed
                     read_closed_ = true;
@@ -99,7 +108,7 @@ public:
         return Poll<Item>(not_ready);
     }
 
-    Pipelined1Future(ReadStream &&stream,
+    RpcFuture(ReadStream &&stream,
             std::shared_ptr<ServiceType> service,
             WriteSink &&sink
             )
@@ -124,50 +133,11 @@ private:
 };
 
 template <typename ReadStream, typename Service, typename WriteSink>
-Pipelined1Future<ReadStream, WriteSink>
-makePipelineFuture(ReadStream&& stream, std::shared_ptr<Service> service, WriteSink &&sink) {
-    return Pipelined1Future<ReadStream, WriteSink>(std::forward<ReadStream>(stream),
+RpcFuture<ReadStream, WriteSink>
+makeRpcFuture(ReadStream&& stream, std::shared_ptr<Service> service, WriteSink &&sink) {
+    return RpcFuture<ReadStream, WriteSink>(std::forward<ReadStream>(stream),
             service,
             std::forward<WriteSink>(sink));
 }
-
-#if 0
-template <typename Pipeline, typename ReadStream, typename WriteSink>
-class PipelinedFuture : public FutureBase<PipelinedFuture<Pipeline, ReadStream, WriteSink>, folly::Unit> {
-public:
-    using Item = folly::Unit;
-    using pipeline_ptr = typename Pipeline::Ptr;
-
-    Poll<Item> poll() override {
-        while (true) {
-            auto r = stream_.poll();
-            if (r.hasException())
-                return Poll<Item>(r.exception());
-            auto v = folly::moveFromTry(r);
-            if (v.isReady()) {
-                if (v->hasValue()) {
-                    pipeline_->read(*(v->value()));
-                } else {
-                    pipeline_->readEOF();
-                    return makePollReady(folly::Unit());
-                }
-            } else {
-                return Poll<Item>(not_ready);
-            }
-        }
-    }
-
-    PipelinedFuture(ReadStream &&stream,
-            pipeline_ptr pipeline)
-        : stream_(std::move(stream)),
-          pipeline_(pipeline) {
-    }
-
-private:
-    ReadStream stream_;
-    pipeline_ptr pipeline_;
-    // State s_ = INIT;
-};
-#endif
 
 }

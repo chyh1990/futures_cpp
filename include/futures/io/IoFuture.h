@@ -10,11 +10,11 @@
 namespace futures {
 namespace io {
 
-template <typename CODEC>
+template <typename Decoder>
 class FramedStream :
-    public StreamBase<FramedStream<CODEC>, typename CODEC::In> {
+    public StreamBase<FramedStream<Decoder>, typename Decoder::Out> {
 public:
-    using Item = typename CODEC::In;
+    using Item = typename Decoder::Out;
 
     const static size_t kRdBufSize = 8 * 1024;
 
@@ -22,32 +22,33 @@ public:
         while (true) {
             if (readable_) {
                 if (eof_) {
-                    if (!rdbuf_->length())
+                    if (q_.empty())
                         return makePollReady(Optional<Item>());
-                    auto f = codec_.decode_eof(rdbuf_);
+                    auto f = codec_.decode_eof(q_);
                     if (f.hasException())
                         return Poll<Optional<Item>>(f.exception());
                     return makePollReady(Optional<Item>(folly::moveFromTry(f)));
                 }
-                FUTURES_DLOG(INFO) << "RDBUF: " << rdbuf_->length();
-                auto f = codec_.decode(rdbuf_);
-                if (f.hasException())
-                    return Poll<Optional<Item>>(f.exception());
-                if (f->hasValue()) {
-                    return makePollReady(folly::moveFromTry(f));
-                } else {
+                // FUTURES_DLOG(INFO) << "RDBUF: " << rdbuf_->length();
+                if (q_.empty()) {
                     readable_ = false;
+                } else {
+                    auto f = codec_.decode(q_);
+                    if (f.hasException())
+                        return Poll<Optional<Item>>(f.exception());
+                    if (f->hasValue()) {
+                        return makePollReady(folly::moveFromTry(f));
+                    } else {
+                        readable_ = false;
+                    }
                 }
             }
             assert(!eof_);
-            // XXX use iovec
-            rdbuf_->unshare();
-            if (rdbuf_->headroom())
-                rdbuf_->retreat(rdbuf_->headroom());
-            if (!rdbuf_->tailroom())
-                rdbuf_->reserve(0, kRdBufSize);
+            if (!q_.tailroom())
+                q_.preallocate(32, 4000);
+            assert(q_.tailroom() > 0);
             std::error_code ec;
-            ssize_t len = io_->read(rdbuf_->writableTail(), rdbuf_->tailroom(), ec);
+            ssize_t len = io_->read(q_.writableTail(), q_.tailroom(), ec);
             if (ec == std::make_error_code(std::errc::connection_aborted)) {
                 assert(len == 0);
                 eof_ = true;
@@ -63,7 +64,8 @@ public:
                 }
             } else {
                 assert(len > 0);
-                rdbuf_->append(len);
+                q_.postallocate(len);
+                FUTURES_DLOG(INFO) << "HERE: " << q_.chainLength();
                 readable_ = true;
             }
         }
@@ -71,21 +73,21 @@ public:
 
     FramedStream(std::unique_ptr<Io> io)
         : io_(std::move(io)), eof_(false), readable_(false),
-          rdbuf_(folly::IOBuf::create(kRdBufSize)) {
+            q_(folly::IOBufQueue::cacheChainLength()) {
     }
 private:
     std::unique_ptr<Io> io_;
-    CODEC codec_;
+    Decoder codec_;
     bool eof_;
     bool readable_;
-    std::unique_ptr<folly::IOBuf> rdbuf_;
+    folly::IOBufQueue q_;
 };
 
-template <typename CODEC>
+template <typename Encoder>
 class FramedSink :
-    public AsyncSinkBase<FramedSink<CODEC>, typename CODEC::Out> {
+    public AsyncSinkBase<FramedSink<Encoder>, typename Encoder::Out> {
 public:
-    using Out = typename CODEC::Out;
+    using Out = typename Encoder::Out;
 
     FramedSink(std::unique_ptr<Io> io)
         : io_(std::move(io)) {
@@ -132,7 +134,7 @@ public:
 
 private:
     std::unique_ptr<Io> io_;
-    CODEC codec_;
+    Encoder codec_;
     folly::IOBufQueue q_;
 
     ssize_t performWrite(
