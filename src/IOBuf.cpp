@@ -23,17 +23,12 @@
 #include <futures/core/Memory.h>
 
 #include <stdexcept>
-#include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
 
-using std::unique_ptr;
+#include "GlogDummy.h"
 
-#define CHECK_EQ(x, y) assert((x) == (y))
-#define DCHECK_EQ(x, y) CHECK_EQ(x, y)
-#define DCHECK(x) assert(x)
-#define DCHECK_LT(x, y) assert((x) < (y))
-#define DCHECK_GE(x, y) assert((x) >= (y))
+using std::unique_ptr;
 
 namespace {
 

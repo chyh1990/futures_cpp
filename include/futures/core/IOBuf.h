@@ -29,6 +29,7 @@
 #include <boost/iterator/iterator_facade.hpp>
 
 #include <futures/core/Likely.h>
+#include <futures/core/Range.h>
 #include <string>
 #include <vector>
 
@@ -37,25 +38,6 @@
 #pragma GCC diagnostic ignored "-Wshadow"
 
 namespace folly {
-
-class ByteRange {
-public:
-  ByteRange(const uint8_t *p, size_t l)
-    : p_(p), l_(l) {}
-
-  ByteRange(const uint8_t *p, const uint8_t *e)
-    : p_(p), l_(e - p) {}
-
-  ByteRange()
-    : p_(nullptr), l_(0) {}
-
-  const unsigned char *data() const { return p_; }
-  size_t size() const { return l_; }
-
-private:
-  const unsigned char *p_;
-  size_t l_;
-};
 
 /**
  * An IOBuf is a pointer to a buffer of data.

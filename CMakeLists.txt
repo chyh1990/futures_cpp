@@ -9,7 +9,8 @@ CPPBUILD_DEPEND()
 INCLUDE_DIRECTORIES(${futures_cpp_SOURCE_DIR}/include)
 AUX_SOURCE_DIRECTORY(src CORE_SRC)
 AUX_SOURCE_DIRECTORY(src/http HTTP_SRC)
-SET(ALL_SRC ${CORE_SRC} ${HTTP_SRC})
+ADD_SUBDIRECTORY(src/udns)
+SET(ALL_SRC ${CORE_SRC} ${HTTP_SRC} ${UDNS_SRC})
 
 if (UNIX)
   SET(LIBAE_SRC src/libae/anet.c)
@@ -17,11 +18,8 @@ endif()
 
 SET(ALL_SRC ${ALL_SRC} ${LIBAE_SRC})
 
-if(IOS)
-CPPBUILD_MANGLELIB_TARGET(futures_cpp ${ALL_SRC})
-else()
 CPPBUILD_LIB_TARGET(futures_cpp ${ALL_SRC})
-endif()
+TARGET_LINK_LIBRARIES(futures_cpp udns)
 CPPBUILD_INSTALL_LIB(futures_cpp)
 
 CPPBUILD_APP_TARGET(ex_socket examples/socket.cpp)

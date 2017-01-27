@@ -93,7 +93,6 @@ class IOBufQueue {
    */
   void append(const void* buf, size_t len);
 
-#if 0
   /**
    * Copy a string to the end of this queue.
    * The caller retains ownership of the source data.
@@ -101,7 +100,6 @@ class IOBufQueue {
   void append(StringPiece sp) {
     append(sp.data(), sp.size());
   }
-#endif
 
   /**
    * Append a chain of IOBuf objects that point to consecutive regions

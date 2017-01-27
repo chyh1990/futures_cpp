@@ -32,6 +32,18 @@ void Socket::close() noexcept {
     fd_ = -1;
 }
 
+void Socket::shutdown(int how, std::error_code &ec) noexcept {
+    if (fd_ >= 0) {
+        if (::shutdown(fd_, how) < 0)
+            ec = current_system_error();
+    }
+}
+
+bool Socket::connect(const folly::SocketAddress &addr, std::error_code &ec)
+{
+    return connect(addr.getAddressStr(), addr.getPort(), ec);
+}
+
 bool Socket::connect(const std::string &addr, uint16_t port, std::error_code &ec)
 {
     char buf[ANET_ERR_LEN];

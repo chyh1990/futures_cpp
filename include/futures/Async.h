@@ -163,4 +163,10 @@ Poll<T0> makePollReady(T&& v) {
   return Poll<T0>(Async<T0>(std::forward<T>(v)));
 }
 
+template <typename T>
+Poll<T> makePollReady(Try<T> &&v) {
+  if (v.hasException()) return Poll<T>(v.exception());
+  return Poll<T>(Async<T>(std::move(v).value()));
+}
+
 }
