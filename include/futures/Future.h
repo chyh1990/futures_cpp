@@ -32,6 +32,8 @@ template <typename T, typename F>
 struct AndThenWrapper;
 template <typename T, typename F>
 struct AndThenWrapper2;
+template <typename T, typename F>
+struct ErrorWrapper;
 
 template <typename Derived, typename T>
 class FutureBase : public IFuture<T> {
@@ -59,6 +61,9 @@ public:
               typename R = typename isFuture<
                 detail::resultOf<F,Try<T>> >::Inner>
     ThenFuture<R, Derived, F> then(F&& f);
+
+    template <typename F, typename Wrapper = ErrorWrapper<T, F>>
+    ThenFuture<folly::Unit, Derived, Wrapper> error(F&& f);
 
     template <typename FutB>
     JoinFuture<Derived, FutB> join(FutB&& f);

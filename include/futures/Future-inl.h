@@ -167,6 +167,21 @@ struct AndThenWrapper2 {
   F func_;
 };
 
+template <typename T, typename F>
+struct ErrorWrapper {
+  ErrorWrapper(F&& f)
+    : func_(std::forward<F>(f)) {
+  }
+
+  OkFuture<folly::Unit> operator()(Try<T> v) {
+    if (v.hasException())
+      func_(v.exception());
+    return makeOk();
+  }
+
+  F func_;
+};
+
 template <typename T>
 class SharedFuture : public FutureBase<SharedFuture<T>, T> {
 public:
@@ -274,6 +289,12 @@ template <typename Derived, typename T>
 template <typename F, typename R>
 ThenFuture<R, Derived, F> FutureBase<Derived, T>::then(F&& f) {
   return ThenFuture<R, Derived, F>(move_self(), std::forward<F>(f));
+}
+
+template <typename Derived, typename T>
+template <typename F, typename Wrapper>
+ThenFuture<folly::Unit, Derived, Wrapper> FutureBase<Derived, T>::error(F&& f) {
+  return ThenFuture<folly::Unit, Derived, Wrapper>(move_self(), Wrapper(std::forward<F>(f)));
 }
 
 template <typename Derived, typename T>
