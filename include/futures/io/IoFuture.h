@@ -229,7 +229,7 @@ private:
 
 };
 
-class SendFuture : public FutureBase<SendFuture, ssize_t> {
+class WriteFuture : public FutureBase<WriteFuture, ssize_t> {
 public:
     enum State {
         INIT,
@@ -238,7 +238,7 @@ public:
     };
     using Item = ssize_t;
 
-    SendFuture(std::unique_ptr<Io> io,
+    WriteFuture(std::unique_ptr<Io> io,
             std::unique_ptr<folly::IOBuf> buf)
         : io_(std::move(io)), s_(INIT),
         buf_(std::move(buf)) {}
@@ -253,7 +253,9 @@ public:
                 if (ec) {
                     io_.reset();
                     return Poll<Item>(IOError("send", ec));
-                } else if (len == 0) {
+                } else if (len < buf_->length()) {
+                    assert(len >= 0);
+                    buf_->trimStart(len);
                     if (io_->poll_write().isNotReady()) {
                         s_ = INIT;
                     } else {
@@ -329,7 +331,7 @@ public:
 };
 
 template <typename ReadPolicy>
-class RecvFuture : public FutureBase<RecvFuture<ReadPolicy>,
+class ReadFuture : public FutureBase<ReadFuture<ReadPolicy>,
     std::unique_ptr<folly::IOBuf>>
 {
 public:
@@ -340,7 +342,7 @@ public:
     };
     using Item = std::unique_ptr<folly::IOBuf>;
 
-    RecvFuture(std::unique_ptr<Io> io, const ReadPolicy &policy)
+    ReadFuture(std::unique_ptr<Io> io, const ReadPolicy &policy)
         : policy_(policy), io_(std::move(io)),
         buf_(folly::IOBuf::create(policy_.bufferSize())) {
     }

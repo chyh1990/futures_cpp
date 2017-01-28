@@ -136,10 +136,10 @@ public:
         return ConnectFuture(reactor, addr, port);
     }
 
-    static io::SendFuture send(EventExecutor *reactor,
+    static io::WriteFuture send(EventExecutor *reactor,
             SocketPtr socket, std::unique_ptr<folly::IOBuf> buf)
     {
-        return io::SendFuture(folly::make_unique<SocketIOHandler>(reactor, socket),
+        return io::WriteFuture(folly::make_unique<SocketIOHandler>(reactor, socket),
                 std::move(buf));
     }
 
@@ -150,10 +150,10 @@ public:
     }
 
     template <class ReadPolicy>
-    static io::RecvFuture<ReadPolicy> recv(EventExecutor *reactor,
+    static io::ReadFuture<ReadPolicy> recv(EventExecutor *reactor,
             std::shared_ptr<Socket> socket, ReadPolicy&& policy)
     {
-        return io::RecvFuture<ReadPolicy>(
+        return io::ReadFuture<ReadPolicy>(
                folly::make_unique<SocketIOHandler>(reactor, socket),
                std::forward<ReadPolicy>(policy));
     }

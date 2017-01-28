@@ -8,4 +8,8 @@
 #define CHECK(x) assert(x)
 #define DCHECK_LT(x, y) assert((x) < (y))
 #define DCHECK_GE(x, y) assert((x) >= (y))
+#define DCHECK_GT(x, y) assert((x) > (y))
+#define DCHECK_NE(x, y) assert((x) != (y))
+#define CHECK_NE(x, y) assert((x) != (y))
 
+#define CHECK_ERR(x) assert((x) == 0);
