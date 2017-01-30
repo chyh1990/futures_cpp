@@ -1,4 +1,5 @@
 #include <futures/Future.h>
+#include <futures/core/Either.h>
 
 namespace futures {
 
@@ -20,13 +21,15 @@ public:
     using poll_type = Poll<b_type>;
 
     ChainStateMachine(FutA&& a, F&& fn)
-        : state_(State::First), a_(std::move(a)), handler_(std::move(fn)) {
+        : state_(State::First),
+        v_(folly::left_tag, std::make_pair(std::move(a), std::move(fn))) {
     }
 
     poll_type poll() {
         switch (state_) {
             case State::First: {
-                auto p = a_.poll();
+                assert(v_.hasLeft());
+                auto p = v_.left().first.poll();
                 if (p.hasValue()) {
                   auto v = folly::moveFromTry(p);
                   if (v.isReady()) {
@@ -40,7 +43,8 @@ public:
                 break;
             }
             case State::Second:
-                return b_->poll();
+                assert(v_.hasRight());
+                return v_.right().poll();
             default:
                 throw InvalidPollStateException();
         }
@@ -52,17 +56,18 @@ private:
         state_ = State::Second;
         // TODO skip
         try {
-          b_ = handler_(std::move(a_result));
-          return b_->poll();
+          v_.assignRight(v_.left().second(std::move(a_result)));
+          return v_.right().poll();
         } catch (const std::exception &e) {
           return poll_type(folly::exception_wrapper(std::current_exception(), e));
         }
     }
 
     State state_;
-    FutA a_;
-    folly::Optional<f_result> b_;
-    F handler_;
+    folly::Either<std::pair<FutA, F>, f_result> v_;
+    // FutA a_;
+    // F handler_;
+    // folly::Optional<f_result> b_;
 };
 
 template <typename T, typename FutA, typename F>
@@ -98,39 +103,39 @@ public:
   using BInner = typename isFuture<FutB>::Inner;
 
   JoinFuture(FutA&& fa, FutB&& fb)
-    : fa_(std::move(fa)), fb_(std::move(fb)) {
+    : fa_(folly::left_tag, std::move(fa)), fb_(folly::left_tag, std::move(fb)) {
   }
 
   Poll<Item> poll() override {
-    if (!ra_.hasValue()) {
-      auto r = fa_.poll();
+    if (fa_.hasLeft()) {
+      auto r = fa_.left().poll();
       if (r.hasException())
         return Poll<Item>(r.exception());
       auto ra = folly::moveFromTry(r);
       if (!ra.isReady())
         return Poll<Item>(not_ready);
-      ra_ = std::move(ra).value();
+      fa_.assignRight(std::move(ra).value());
     }
-    if (!rb_.hasValue()) {
-      auto r = fb_.poll();
+    if (fb_.hasLeft()) {
+      auto r = fb_.left().poll();
       if (r.hasException())
         return Poll<Item>(r.exception());
       auto rb = folly::moveFromTry(r);
       if (!rb.isReady())
         return Poll<Item>(not_ready);
-      rb_ = std::move(rb).value();
+      fb_.assignRight(std::move(rb).value());
     }
-    assert(ra_.hasValue() && rb_.hasValue());
-    return Poll<Item>(Async<Item>(
-          std::make_tuple(std::move(ra_).value(), std::move(rb_).value())
-      ));
+    assert(fa_.hasRight() && fb_.hasRight());
+    return makePollReady(
+          std::make_tuple(std::move(fa_).right(), std::move(fb_).right())
+      );
   }
 
 private:
-  FutA fa_;
-  FutB fb_;
-  Optional<AInner> ra_;
-  Optional<BInner> rb_;
+  folly::Either<FutA, AInner> fa_;
+  folly::Either<FutB, BInner> fb_;
+  // Optional<AInner> ra_;
+  // Optional<BInner> rb_;
 };
 
 template <typename T, typename F>

@@ -2,6 +2,7 @@
 
 #include <futures/Future.h>
 #include <vector>
+#include <futures/core/Either.h>
 
 namespace futures {
 
@@ -13,47 +14,45 @@ class WhenAllFuture: public FutureBase<WhenAllFuture<Fut>, WhenAllItem<Fut>> {
 public:
     using Item = WhenAllItem<Fut>;
     using value_type = typename isFuture<Fut>::Inner;
-    static_assert(std::is_default_constructible<value_type>::value, "T must be default constructiable");
 
     template <class Iterator>
     WhenAllFuture(Iterator begin, Iterator end) {
-        std::move(begin, end, std::back_inserter(all_));
-        if (all_.empty()) throw FutureEmptySetException();
-        result_.resize(all_.size());
+        if (begin == end) throw FutureEmptySetException();
+        for (auto it = begin; it != end; ++it) {
+            all_.emplace_back(folly::left_tag, std::move(*it));
+        }
     }
 
     Poll<Item> poll() {
         bool all_done = true;
         for (size_t i = 0; i < all_.size(); ++i) {
-            if (!all_[i].isValid()) continue;
-            auto r = all_[i].poll();
+            if (!all_[i].hasLeft()) continue;
+            auto r = all_[i].left().poll();
             if (r.hasException()) {
-                cancelPending();
+                all_.clear();
                 return Poll<Item>(r.exception());
             }
             auto v = folly::moveFromTry(r);
             if (v.isReady()) {
-                result_.emplace(result_.begin() + i, std::move(v).value());
-                all_[i].clear();
+                all_[i].assignRight(std::move(v).value());
             } else {
                 all_done = false;
             }
         }
         if (all_done) {
-            return Poll<Item>(Async<Item>(std::move(result_)));
+            std::vector<value_type> vs;
+            vs.reserve(all_.size());
+            for (size_t i = 0; i < all_.size(); ++i)
+                vs[i] = std::move(all_[i]).right();
+            all_.clear();
+            return makePollReady(std::move(vs));
         } else {
             return Poll<Item>(not_ready);
         }
     }
 
 private:
-    std::vector<Fut> all_;
-    std::vector<value_type> result_;
-
-    void cancelPending() {
-        for (auto &e: all_)
-            if (e.isValid()) e.cancel();
-    }
+    std::vector<folly::Either<Fut, value_type>> all_;
 };
 
 template <typename It,

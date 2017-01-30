@@ -31,9 +31,22 @@ public:
             "Either left may not be used with abstract types");
     static_assert(!std::is_abstract<right_type>::value,
             "Either right may not be used with abstract types");
+    static constexpr bool is_nothrow_copy_assignable =
+      std::is_nothrow_copy_assignable<Left>::value
+      && std::is_nothrow_copy_assignable<Right>::value;
+    static constexpr bool is_nothrow_copy_constructible =
+      std::is_nothrow_copy_constructible<Left>::value
+      && std::is_nothrow_copy_constructible<Right>::value;
+
+    static constexpr bool is_nothrow_move_assignable =
+      std::is_nothrow_move_assignable<Left>::value
+      && std::is_nothrow_move_assignable<Right>::value;
+    static constexpr bool is_nothrow_move_constructible =
+      std::is_nothrow_move_constructible<Left>::value
+      && std::is_nothrow_move_constructible<Right>::value;
 
     Either(const LeftTag &l, left_type&& left) {
-        construct_left(std::move(left));
+        construct_left(std::forward<Left>(left));
     }
 
     Either(const LeftTag &l, const left_type& left) {
@@ -41,14 +54,15 @@ public:
     }
 
     Either(const RightTag &l, right_type&& right) {
-        construct_right(std::move(right));
+        construct_right(std::forward<Right>(right));
     }
 
     Either(const RightTag &l, const right_type& right) {
         construct_right(right);
     }
 
-    Either(): state_(State::UNINIT) {
+    Either() noexcept
+      : state_(State::UNINIT) {
     }
 
     ~Either() {
@@ -65,7 +79,7 @@ public:
 
     left_type left() && {
         require_left();
-        return std::move(storage_.left.value);
+        return std::forward<Left>(storage_.left.value);
     }
 
     const left_type &left() const& {
@@ -78,9 +92,9 @@ public:
         return storage_.right.value;
     }
 
-    right_type &right() && {
+    right_type right() && {
         require_right();
-        return std::move(storage_.right.value);
+        return std::forward<Right>(storage_.right.value);
     }
 
     const right_type &right() const & {
@@ -90,20 +104,20 @@ public:
 
     void assignLeft(left_type &&left) {
         if (state_ == State::LEFT) {
-            storage_.left.value = std::move(left);
+            storage_.left.value = std::forward<Left>(left);
         } else {
             clear();
-            construct_left(std::move(left));
+            construct_left(std::forward<Left>(left));
         }
         state_ = State::LEFT;
     }
 
     void assignRight(right_type &&right) {
         if (state_ == State::RIGHT) {
-            storage_.right.value = std::move(right);
+            storage_.right.value = std::forward<Right>(right);
         } else {
             clear();
-            construct_right(std::move(right));
+            construct_right(std::forward<Right>(right));
         }
         state_ = State::RIGHT;
     }
@@ -112,9 +126,9 @@ public:
         if (this != &src) {
             clear();
             if (src.hasLeft()) {
-                assignLeft(std::move(src.storage_.left.value));
+                assignLeft(std::forward<Left>(src.storage_.left.value));
             } else if (src.hasRight()) {
-                assignRight(std::move(src.storage_.right.value));
+                assignRight(std::forward<Right>(src.storage_.right.value));
             }
             src.clear();
         }
@@ -144,32 +158,44 @@ public:
         if (this != &src) {
             clear();
            if (src.hasLeft()) {
-                assignLeft(std::move(src.storage_.left.value));
+                assignLeft(src.storage_.left.value);
             } else if (src.hasRight()) {
-                assignRight(std::move(src.storage_.right.value));
+                assignRight(src.storage_.right.value);
             }
         }
     }
 
-    Either& operator=(const Either& src) {
+    Either& operator=(const Either& src)
+      noexcept (is_nothrow_copy_assignable)
+    {
         assign(src);
         return *this;
     }
 
     Either(const Either& src)
+      noexcept (is_nothrow_copy_constructible)
         : state_(State::UNINIT) {
         assign(src);
     }
 
 
-    Either& operator=(Either&& src) {
+    Either& operator=(Either&& src)
+      noexcept (is_nothrow_move_assignable)
+    {
         assign(std::move(src));
         return *this;
     }
 
     Either(Either &&src)
+        noexcept(is_nothrow_move_constructible)
         : state_(State::UNINIT) {
-        assign(std::move(src));
+        // assign(std::move(src));
+        if (src.hasLeft()) {
+          construct_left(std::forward<Left>(src.storage_.left.value));
+        } else if (src.hasRight()) {
+          construct_right(std::forward<Right>(src.storage_.right.value));
+        }
+        src.clear();
     }
 
 private:
