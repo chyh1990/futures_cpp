@@ -76,10 +76,6 @@ public:
         return Poll<Item>(not_ready);
     }
 
-    void cancel() override {
-        handler_.reset();
-        s_ = CANCELLED;
-    }
 private:
     State s_ = INIT;;
     EventExecutor* ev_;

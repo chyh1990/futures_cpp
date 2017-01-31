@@ -277,10 +277,6 @@ public:
         return Poll<Item>(not_ready);
     }
 
-    void cancel() override {
-        io_.reset();
-        s_ = CANCELLED;
-    }
 private:
     std::unique_ptr<Io> io_;
     State s_;
@@ -384,10 +380,6 @@ public:
 
     }
 
-    void cancel() override {
-        io_.reset();
-        s_ = CANCELLED;
-    }
 private:
     State s_ = INIT;
     ReadPolicy policy_;

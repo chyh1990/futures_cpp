@@ -253,6 +253,18 @@ TEST(Future, RecursiveTimer) {
 	ev.run();
 }
 
+TEST(Future, LoopFn) {
+	auto f = makeLoop(0, [] (int s) {
+			std::cerr << s << std::endl;
+			if (s < 10) {
+				return makeOk(makeContinue<std::string, int>(s + 1));
+			} else {
+				return makeOk(makeBreak<std::string, int>("XX"));
+			}
+	});
+	EXPECT_EQ(f.value().value(), "XX");
+}
+
 TEST(Either, NotSame)
 {
 	folly::Either<int, double> e1(folly::left_tag, 1);

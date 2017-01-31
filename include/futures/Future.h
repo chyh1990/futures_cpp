@@ -17,7 +17,7 @@ template <typename T>
 class IFuture {
 public:
     virtual Poll<T> poll() = 0;
-    virtual void cancel() {}
+    // virtual void cancel() {}
     virtual ~IFuture() = default;
 };
 
@@ -119,11 +119,6 @@ public:
     Poll<T> poll() {
         validFuture();
         return impl_->poll();
-    }
-
-    void cancel() {
-        validFuture();
-        return impl_->cancel();
     }
 
     void clear() { impl_.reset(); }
@@ -248,13 +243,10 @@ public:
       if (try_.hasException()) {
         return Poll<Item>(try_.exception());
       } else {
-        return try_->poll();
-      }
-    }
-
-    void cancel() override {
-      if (!try_.hasException()) {
-        try_->cancel();
+        auto r = try_->poll();
+        if (r.hasException() || r->isReady())
+          try_ = Try<FutA>();
+        return r;
       }
     }
 
@@ -271,8 +263,6 @@ public:
       : fn_(std::move(fn)) {}
 
     Poll<T> poll() override {
-      if (cancelled_)
-        return Poll<T>(FutureCancelledException());
       try {
         return Poll<T>(Async<T>(fn_()));
       } catch (const std::exception &e) {
@@ -280,11 +270,7 @@ public:
       }
     }
 
-    void cancel() override {
-      cancelled_ = true;
-    }
 private:
-  bool cancelled_ = false;
   F fn_;
 };
 
@@ -427,3 +413,4 @@ LazyFuture<Return, F> makeLazy(F&& f) {
 #include <futures/Future-inl.h>
 #include <futures/detail/SelectFuture.h>
 #include <futures/detail/WhenAllFuture.h>
+#include <futures/detail/LoopFn.h>

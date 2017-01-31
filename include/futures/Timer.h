@@ -57,8 +57,6 @@ public:
 
     Poll<Item> poll();
 
-    void cancel();
-
 private:
     EventExecutor *reactor_;
     double after_;
@@ -84,27 +82,35 @@ public:
     }
 
     Poll<Item> poll() {
-        auto ra = timer_.poll();
+        auto ra = timer_->poll();
         if (ra.hasException()) {
-            f_.cancel();
+            clear();
             return Poll<Item>(ra.exception());
         }
         auto va = folly::moveFromTry(ra);
         if (va.isReady()) {
-            f_.cancel();
+            clear();
             return Poll<Item>(TimeoutException());
         }
-        auto rb = f_.poll();
-        if (rb.hasException())
+        auto rb = f_->poll();
+        if (rb.hasException()) {
+            clear();
             return Poll<Item>(rb.exception());
-        if (rb.value().isReady())
-            timer_.cancel();
+        }
+        if (rb.value().isReady()) {
+            timer_.clear();
+        }
         return std::move(rb);
     }
 
 private:
-    Fut f_;
-    TimerFuture timer_;
+    Optional<Fut> f_;
+    Optional<TimerFuture> timer_;
+
+    void clear() {
+        f_.clear();
+        timer_.clear();
+    }
 };
 
 template <typename Fut>

@@ -26,11 +26,4 @@ Poll<TimerFuture::Item> TimerFuture::poll() {
     return Poll<Item>(not_ready);
 }
 
-void TimerFuture::cancel() {
-    if (s_ == WAITING) {
-        handler_.reset();
-    }
-    s_ = CANCELLED;
-}
-
 }

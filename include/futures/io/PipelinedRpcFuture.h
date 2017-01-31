@@ -23,8 +23,6 @@ public:
     }
 
     void cancel() {
-        for (auto &e: in_flight_)
-            e.cancel();
         in_flight_.clear();
     }
 
@@ -117,10 +115,6 @@ public:
         sink_(std::move(sink)),
         dispatcher_(service_.get()) {
         }
-
-    void cancel() override {
-        dispatcher_.cancel();
-    }
 
 private:
     ReadStream stream_;

@@ -89,7 +89,7 @@ static BoxedFuture<folly::Unit> process(EventExecutor *ev,
       io::FramedSink<http::HttpV1Encoder>(folly::make_unique<tcp::SocketIOHandler>(ev, client))
     ).then([] (Try<folly::Unit> err) {
       if (err.hasException())
-        std::cerr << err.exception().what();
+        std::cerr << err.exception().what() << std::endl;
       return makeOk();
     }).boxed();
 }

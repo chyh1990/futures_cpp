@@ -241,14 +241,6 @@ public:
       return Poll<Item>(not_ready);
     }
 
-    void cancel() {
-      if (!inner_) throw InvalidPollStateException();
-      std::lock_guard<std::mutex> g(inner_->mu);
-      if (inner_->result) return;
-      inner_->impl->cancel();
-      unpark_all();
-    }
-
     ~SharedFuture() {
       if (!inner_) return;
       std::lock_guard<std::mutex> g(inner_->mu);

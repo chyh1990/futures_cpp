@@ -231,11 +231,6 @@ Poll<SocketPtr> ConnectFuture::poll() {
     return Poll<Item>(not_ready);
 }
 
-void ConnectFuture::cancel() {
-    io_.reset();
-    s_ = CANCELLED;
-}
-
 Poll<Optional<SocketPtr>> AcceptStream::poll() {
     switch (s_) {
         case INIT:

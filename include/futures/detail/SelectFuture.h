@@ -39,10 +39,6 @@ public:
         return Poll<Item>(not_ready);
     }
 
-    void cancel() override {
-        for (auto &e: seq_)
-            e.cancel();
-    }
 private:
     FutureSeq seq_;
 

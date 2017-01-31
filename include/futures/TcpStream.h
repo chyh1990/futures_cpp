@@ -94,7 +94,6 @@ public:
     using Item = SocketPtr;
 
     Poll<SocketPtr> poll() override;
-    void cancel() override;
 
     ConnectFuture(EventExecutor *ev,
         const std::string addr, uint16_t port)
