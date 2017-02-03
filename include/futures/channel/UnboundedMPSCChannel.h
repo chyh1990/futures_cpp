@@ -65,6 +65,8 @@ public:
         rx_task_.clear();
     }
 
+    void cancel() { throw InvalidChannelStateException(); }
+
 private:
     std::mutex mu_;
     std::queue<T> q_; // TODO: use lockfree impl

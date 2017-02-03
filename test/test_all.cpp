@@ -6,6 +6,7 @@
 #include <futures/core/Either.h>
 
 #include <futures/Future.h>
+#include <futures/Promise.h>
 // #include <futures/Task.h>
 #include <futures/EventExecutor.h>
 #include <futures/CpuPoolExecutor.h>
@@ -325,6 +326,25 @@ TEST(Channel, MPSC) {
 	s1.send(1);
 	s1.send(2);
 	EXPECT_EQ(t.second.poll()->value(), 1);
+}
+
+TEST(Promise, Simple) {
+	Promise<int> p;
+	auto f = p.getFuture();
+#if __cplusplus >= 201402L
+	std::thread t([p{std::move(p)}] () {
+		p.setValue(3);
+	});
+#else
+	auto m = folly::makeMoveWrapper(std::move(p));
+	std::thread t([m] () {
+		auto p = m.move();
+		p.setValue(3);
+	});
+#endif
+
+	EXPECT_EQ(f.value().value(), 3);
+	t.join();
 }
 
 int main(int argc, char* argv[]) {

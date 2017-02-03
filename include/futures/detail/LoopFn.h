@@ -32,7 +32,7 @@ public:
                 fut_.clear();
                 return makePollReady(std::move(v->left()));
             } else {
-                fut_ = func_(std::move(v->right()));
+                fut_.emplace(func_(std::move(v->right())));
             }
         }
     }

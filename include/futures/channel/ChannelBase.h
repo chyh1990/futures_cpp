@@ -20,6 +20,8 @@ public:
         c->addSender();
     }
 
+    BasicSender() {}
+
     virtual ~BasicSender() {
         if (impl_)
             impl_->closeSender();
@@ -34,6 +36,12 @@ public:
         assert(impl_.get() != nullptr);
         return impl_->send(v);
     }
+
+    void cancel() {
+        return impl_->cancel();
+    }
+
+    bool isValid() const { return !! impl_; }
 
     BasicSender(const BasicSender&) = delete;
     BasicSender& operator=(const BasicSender&) = delete;
@@ -52,6 +60,8 @@ public:
     BasicReceiver(std::shared_ptr<Channel> c)
         : impl_(c) {}
 
+    BasicReceiver() {}
+
     virtual ~BasicReceiver() {
         if (impl_)
             impl_->closeReceiver();
@@ -61,6 +71,8 @@ public:
         assert(impl_.get() != nullptr);
         return impl_->poll();
     }
+
+    bool isValid() const { return !! impl_; }
 
     BasicReceiver(const BasicReceiver&) = delete;
     BasicReceiver& operator=(const BasicReceiver&) = delete;

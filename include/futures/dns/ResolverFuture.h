@@ -84,9 +84,11 @@ private:
 
     ev::io io_;
     ev::timer timer_;
+    ev::prepare check_;
 
     void onEvent(ev::io &watcher, int revent);
     void onTimer(ev::timer &watcher, int revent);
+    void onPrepare(ev::prepare &watcher, int revent);
 
     static void queryA4Callback(struct dns_ctx *ctx, struct dns_rr_a4 *result, void *data);
     static void queryA6Callback(struct dns_ctx *ctx, struct dns_rr_a6 *result, void *data);

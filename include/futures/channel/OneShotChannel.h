@@ -35,8 +35,12 @@ public:
         std::lock_guard<std::mutex> g(mu_);
         if (s_ == Closed)
             return Poll<T>(FutureCancelledException());
-        if (s_ == Ready)
-            return Poll<T>(Async<T>(std::move(std::move(v_).value())));
+        if (s_ == Ready) {
+            if (v_)
+                return Poll<T>(Async<T>(std::move(v_).value()));
+            else
+                return Poll<T>(FutureCancelledException());
+        }
 
         rx_task_ = CurrentTask::park();
         return Poll<T>(not_ready);
@@ -45,12 +49,18 @@ public:
     void addSender() {}
     void addReceiver() {}
 
+    void cancel() {
+        std::lock_guard<std::mutex> g(mu_);
+        if (s_ == Ready) throw InvalidChannelStateException();
+        s_ = Ready;
+        notify();
+    }
+
     void closeSender() {
         std::lock_guard<std::mutex> g(mu_);
         if (s_ == NotReady) {
             s_ = Closed;
-            if (rx_task_.hasValue())
-                rx_task_->unpark();
+            notify();
         }
     }
 
@@ -64,6 +74,11 @@ private:
     Status s_;  // use as memory barrier
     Optional<T> v_;
     Optional<Task> rx_task_;
+
+    void notify() {
+        if (rx_task_) rx_task_->unpark();
+        rx_task_.clear();
+    }
 };
 
 template <typename T>

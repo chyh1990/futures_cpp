@@ -32,7 +32,7 @@ public:
         }
     }
 
-    CpuReceiveFuture(channel::OneshotChannelReceiver<Try<T>> recv)
+    CpuReceiveFuture(channel::OneshotChannelReceiver<Try<T>>&& recv)
         : recv_(std::move(recv)) {
     }
 

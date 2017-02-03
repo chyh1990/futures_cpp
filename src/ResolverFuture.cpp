@@ -13,7 +13,7 @@ inline std::error_code current_system_error(int e = errno) {
 }
 
 AsyncResolver::AsyncResolver(EventExecutor *ev)
-    : ev_(ev), io_(ev->getLoop()), timer_(ev->getLoop()) {
+    : ev_(ev), io_(ev->getLoop()), timer_(ev->getLoop()), check_(ev->getLoop()) {
     static struct dns_ctx * kDefaultCtx = [] () noexcept {
         dns_init(&dns_defctx, 0);
         return &dns_defctx;
@@ -36,6 +36,9 @@ AsyncResolver::AsyncResolver(EventExecutor *ev)
 
     timer_.set<AsyncResolver, &AsyncResolver::onTimer>(this);
     timer_.start(0.0);
+
+    check_.set<AsyncResolver, &AsyncResolver::onPrepare>(this);
+    check_.start();
 }
 
 void AsyncResolver::onEvent(ev::io &watcher, int revent) {
@@ -50,6 +53,12 @@ void AsyncResolver::onTimer(ev::timer &watcher, int revent) {
         throw EventException("syscall error");
     FUTURES_DLOG(INFO) << "onTimer";
     if (revent & ev::TIMER)
+        dns_timeouts(ctx_, 30, 0);
+}
+
+void AsyncResolver::onPrepare(ev::prepare &watcher, int revent) {
+    // flush requests before blocking
+    if (revent & ev::PREPARE)
         dns_timeouts(ctx_, 30, 0);
 }
 
@@ -127,6 +136,7 @@ void AsyncResolver::queryA6Callback(struct dns_ctx *ctx, struct dns_rr_a6 *resul
 AsyncResolver::~AsyncResolver() {
     io_.stop();
     timer_.stop();
+    check_.stop();
     if (ctx_)
         dns_free(ctx_);
 }
