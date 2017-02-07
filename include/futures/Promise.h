@@ -14,6 +14,8 @@ template <typename T>
 class PromiseFuture : public FutureBase<PromiseFuture<T>, T> {
 public:
     Poll<T> poll() override {
+        if (v_.hasException() || v_.hasValue())
+            return makePollReady(std::move(v_));
         auto p = recv_.poll();
         if (p.hasException())
             return Poll<T>(p.exception());
@@ -25,14 +27,21 @@ public:
         }
     }
 
-    PromiseFuture(channel::OneshotChannelReceiver<Try<T>> &&recv)
+    explicit PromiseFuture(channel::OneshotChannelReceiver<Try<T>> &&recv)
         : recv_(std::move(recv)) {
     }
 
+    explicit PromiseFuture(Try<T> &&recv)
+        : v_(std::move(recv)) {
+    }
+
+    explicit PromiseFuture(const Try<T> &recv)
+        : v_(recv) {
+    }
 private:
     channel::OneshotChannelReceiver<Try<T>> recv_;
+    Try<T> v_;
 };
-
 
 
 template <typename T>
@@ -67,5 +76,14 @@ private:
     channel::OneshotChannelReceiver<Try<T>> r_;
 };
 
+template <typename T, typename T0 = typename T::element_type>
+PromiseFuture<T0> makePromiseFuture(T&& v) {
+    return PromiseFuture<T0>(std::forward<T>(v));
+}
+
+template <typename T, typename T0 = typename std::remove_reference<T>::type>
+PromiseFuture<T0> makeReadyPromiseFuture(T&& v) {
+    return PromiseFuture<T0>(Try<T0>(std::forward<T>(v)));
+}
 
 }

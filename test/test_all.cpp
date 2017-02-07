@@ -345,6 +345,9 @@ TEST(Promise, Simple) {
 
 	EXPECT_EQ(f.value().value(), 3);
 	t.join();
+
+	makePromiseFuture(Try<int>(3));
+	makeReadyPromiseFuture(3);
 }
 
 int main(int argc, char* argv[]) {
