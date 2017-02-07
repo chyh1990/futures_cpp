@@ -34,6 +34,8 @@ template <typename T, typename F>
 struct AndThenWrapper2;
 template <typename T, typename F>
 struct ErrorWrapper;
+template <typename T, typename F>
+struct MapWrapper;
 
 template <typename Derived, typename T>
 class FutureBase : public IFuture<T> {
@@ -67,6 +69,10 @@ public:
 
     template <typename FutB>
     JoinFuture<Derived, FutB> join(FutB&& f);
+
+    template <typename F, typename Wrapper = MapWrapper<T, F>,
+              typename R = typename detail::resultOf<F, T>>
+    ThenFuture<R, Derived, Wrapper> map(F&& f);
 
     BoxedFuture<T> boxed();
     SharedFuture<T> shared();

@@ -187,6 +187,23 @@ struct ErrorWrapper {
   F func_;
 };
 
+template <typename T, typename F>
+struct MapWrapper {
+  using Return = typename detail::resultOf<F, T>;
+
+  MapWrapper(F&& f)
+    : func_(std::forward<F>(f)) {
+  }
+
+  ResultFuture<Return> operator()(Try<T> v) {
+    if (v.hasException())
+      return ResultFuture<Return>(Try<Return>(v.exception()));
+    return ResultFuture<Return>(Try<Return>(func_(folly::moveFromTry(v))));
+  }
+
+  F func_;
+};
+
 template <typename T>
 class SharedFuture : public FutureBase<SharedFuture<T>, T> {
 public:
@@ -292,6 +309,12 @@ template <typename Derived, typename T>
 template <typename F, typename Wrapper>
 ThenFuture<folly::Unit, Derived, Wrapper> FutureBase<Derived, T>::error(F&& f) {
   return ThenFuture<folly::Unit, Derived, Wrapper>(move_self(), Wrapper(std::forward<F>(f)));
+}
+
+template <typename Derived, typename T>
+template <typename F, typename Wrapper, typename R>
+ThenFuture<R, Derived, Wrapper> FutureBase<Derived, T>::map(F &&f) {
+  return ThenFuture<R, Derived, Wrapper>(move_self(), Wrapper(std::forward<F>(f)));
 }
 
 template <typename Derived, typename T>

@@ -299,6 +299,11 @@ TEST(Either, Same)
 	folly::Either<int, int> e1(folly::left_tag, 1);
 }
 
+TEST(Future, Map)
+{
+	auto f = makeOk(4).map([] (int v) { return std::to_string(v) + "1"; });
+	EXPECT_EQ(f.wait()->value(), "41");
+}
 
 #endif
 
