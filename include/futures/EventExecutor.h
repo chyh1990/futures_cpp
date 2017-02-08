@@ -17,7 +17,6 @@ public:
     ~EventExecutor() {}
 
     void execute(std::unique_ptr<Runnable> run) override {
-        if (wait_stop_) return;
         auto cur = CurrentExecutor::current();
         if (cur && cur != this) {
             FUTURES_DLOG(INFO) << "foreign execute: " << run.get();
@@ -72,20 +71,22 @@ public:
                 run->run();
                 delete run;
             }
-            if (!always_blocks && pendings_.empty())
+            if (pendings_.empty())
                 break;
-            if (wait_stop_) break;
-            FUTURES_DLOG(INFO) << "START POLL: " << this;
-            getLoop().run(EVRUN_ONCE);
-            FUTURES_DLOG(INFO) << "END POLL: " << this;
-        }
-        // cleanup
-        while (!pendings_.empty()) {
-            assert(wait_stop_);
-            EventWatcherBase &n = pendings_.front();
-            n.cleanup(0);
-            // no pop here, front node will should be removed by cleanup
-            assert(&pendings_.front() != &n);
+            if (wait_stop_) {
+                // cleanup
+                FUTURES_DLOG(INFO) << "cleaning up";
+                while (!pendings_.empty()) {
+                    EventWatcherBase &n = pendings_.front();
+                    n.cleanup(0);
+                    // no pop here, front node will should be removed by cleanup
+                    assert(&pendings_.front() != &n);
+                }
+            } else {
+                FUTURES_DLOG(INFO) << "START POLL: " << this;
+                getLoop().run(EVRUN_ONCE);
+                FUTURES_DLOG(INFO) << "END POLL: " << this;
+            }
         }
         signaler_.stop();
         // we may still have some pe
