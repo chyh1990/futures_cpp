@@ -86,7 +86,7 @@ public:
         }
     };
 
-    std::unique_ptr<CompletionToken> doResolve(const std::string &hostname, int flags);
+    io::intrusive_ptr<CompletionToken> doResolve(const std::string &hostname, int flags);
     void doCancel(struct dns_query* q);
 
 private:
@@ -115,7 +115,7 @@ public:
         : resolver_(resolver), hostname_(hostname), flags_(flags) {}
 
     Poll<Item> poll() override {
-        if (!token_)
+        if (!token_.get())
             token_ = resolver_->doResolve(hostname_, flags_);
         return token_->poll();
     }
@@ -124,7 +124,7 @@ private:
     std::shared_ptr<AsyncResolver> resolver_;
     std::string hostname_;
     int flags_;
-    std::unique_ptr<AsyncResolver::CompletionToken> token_;
+    io::intrusive_ptr<AsyncResolver::CompletionToken> token_;
 };
 
 }

@@ -66,17 +66,31 @@ public:
         };
     }
 
+    IOObject *getIOObject() {
+        return parent_;
+    }
+
+    void addRef() {
+        ref_count_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void decRef() {
+        if (ref_count_.fetch_sub(1, std::memory_order_release) == 1) {
+            std::atomic_thread_fence(std::memory_order_acquire);
+            delete this;
+        }
+    }
+
+protected:
     virtual ~CompletionToken() {
         assert(!task_);
         assert(s_ != STARTED);
     }
 
-    IOObject *getIOObject() {
-        return parent_;
-    }
 private:
     IOObject *parent_;
     Optional<Task> task_;
+    std::atomic_size_t ref_count_{1};
 
     enum State {
         STARTED,
@@ -91,6 +105,66 @@ private:
     }
 
     friend class IOObject;
+};
+
+template <typename T>
+class intrusive_ptr {
+public:
+    intrusive_ptr()
+        : ptr_(nullptr) {}
+
+    intrusive_ptr(T* ptr)
+        : ptr_(ptr) {
+    }
+
+    ~intrusive_ptr() {
+        reset();
+    }
+
+    void reset() {
+        if (ptr_) ptr_->decRef();
+        ptr_ = nullptr;
+    }
+
+    intrusive_ptr& operator=(const intrusive_ptr& o) {
+        if (this == &o) return *this;
+        reset();
+        ptr_ = o.ptr_;
+        if (ptr_) ptr_->addRef();
+        return *this;
+    }
+
+    intrusive_ptr(const intrusive_ptr& o)
+        : ptr_(o.ptr_) {
+        if (ptr_) ptr_->addRef();
+    }
+
+    intrusive_ptr(intrusive_ptr&& o)
+        : ptr_(o.ptr_) {
+        o.ptr_ = nullptr;
+    }
+
+    intrusive_ptr& operator=(intrusive_ptr&& o) {
+        if (this == &o) return *this;
+        reset();
+        ptr_ = o.ptr_;
+        o.ptr_ = nullptr;
+        return *this;
+    }
+
+    T* operator->() {
+        return ptr_;
+    }
+
+    const T* operator->() const {
+        return ptr_;
+    }
+
+    T* get() { return ptr_; }
+    const T* get() const { return ptr_; }
+
+private:
+    T *ptr_;
 };
 
 void IOObject::attachChild(CompletionToken *tok) {
