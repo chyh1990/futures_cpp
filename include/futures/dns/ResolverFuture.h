@@ -3,6 +3,7 @@
 #include <futures/core/SocketAddress.h>
 #include <futures/io/IoFuture.h>
 #include <futures/io/WaitHandleBase.h>
+#include <futures/Promise.h>
 
 struct dns_ctx;
 struct dns_rr_a4;
@@ -20,7 +21,7 @@ public:
 
 using ResolverResult = std::vector<folly::IPAddress>;
 
-class AsyncResolver {
+class AsyncResolver : public io::IOObject {
 public:
     enum RecordType {
         TypeA4 = 0,
@@ -32,53 +33,63 @@ public:
         EnableTypeA6 = 0x02,
     };
 
-    class WaitHandle : public io::WaitHandleBase<ResolverResult> {
-    public:
-        void cancel() {
-            if (isReady()) return;
-            for (int i = 0; i < 4; ++i)
-                if (q[i]) resolver->doCancel(q[i]);
-            // all callbacks removed from udns, drop reference
-            release();
-            set(Try<ResolverResult>(FutureCancelledException()));
-        }
-
-        WaitHandle(AsyncResolver *r) : resolver(r) {
-            q.fill(nullptr);
-        }
-
-        bool hasPending() const {
-            for (auto e: q) if (e) return true;
-            return false;
-        }
-
-    private:
-        AsyncResolver *resolver;
-        std::array<struct dns_query*, 4> q;
-        ResolverResult addrs_;
-
-        friend class AsyncResolver;
-
-        void doReady() {
-            if (hasPending()) return;
-            set(Try<ResolverResult>(std::move(addrs_)));
-            unpark();
-            release();
-        }
-    };
-
     AsyncResolver(EventExecutor *ev);
     ~AsyncResolver();
-
-    io::wait_handle_ptr<WaitHandle> doResolve(const std::string &hostname, int flags);
-    void doCancel(struct dns_query* q);
 
     AsyncResolver(AsyncResolver&&) = delete;
     AsyncResolver& operator=(AsyncResolver&&) = delete;
     AsyncResolver(const AsyncResolver&) = delete;
     AsyncResolver& operator=(const AsyncResolver&) = delete;
+
+    struct CompletionToken : public io::CompletionToken {
+        std::array<struct dns_query*, 4> q;
+        ResolverResult addrs_;
+
+        CompletionToken(AsyncResolver *r)
+            : io::CompletionToken(r) {
+            q.fill(nullptr);
+        }
+
+        ~CompletionToken() {
+            cleanup(0);
+        }
+
+        void checkPending() {
+            if (!hasPending())
+                notifyDone();
+        }
+
+        Poll<ResolverResult> poll() {
+            auto v = pollState();
+            if (v.hasException())
+                return Poll<ResolverResult>(v.exception());
+            if (*v) {
+                return makePollReady(std::move(addrs_));
+            } else {
+                return Poll<ResolverResult>(not_ready);
+            }
+        }
+
+        void onCancel() override {
+            for (int i = 0; i < 4; ++i) {
+                if (q[i]) {
+                    static_cast<AsyncResolver*>(getIOObject())->doCancel(q[i]);
+                    q[i] = nullptr;
+                }
+            }
+        }
+    private:
+        bool hasPending() const {
+            for (auto e: q)
+                if (e) return true;
+            return false;
+        }
+    };
+
+    std::unique_ptr<CompletionToken> doResolve(const std::string &hostname, int flags);
+    void doCancel(struct dns_query* q);
+
 private:
-    EventExecutor *ev_;
     struct dns_ctx *ctx_;
     int fd_;
 
@@ -95,40 +106,26 @@ private:
     static void timerSetupCallback(struct dns_ctx *ctx, int timeout, void *data);
 };
 
-class ResolverFuture : public FutureBase<ResolverFuture,
-    std::vector<folly::IPAddress>> {
-    enum State {
-        INIT,
-        SUBMITTED,
-        DONE,
-    };
+class ResolverFuture : public FutureBase<ResolverFuture, ResolverResult> {
 public:
-    using Item = std::vector<folly::IPAddress>;
+    using Item = ResolverResult;
 
-    ResolverFuture(std::shared_ptr<AsyncResolver> resolver, const std::string &hostname, int flags);
+    ResolverFuture(std::shared_ptr<AsyncResolver> resolver,
+            const std::string &hostname, int flags)
+        : resolver_(resolver), hostname_(hostname), flags_(flags) {}
 
-    ResolverFuture(ResolverFuture&&) = default;
-    ResolverFuture& operator=(ResolverFuture&&) = default;
-    ResolverFuture(const ResolverFuture&) = delete;
-    ResolverFuture& operator=(const ResolverFuture&) = delete;
-
-    Poll<Item> poll() override;
+    Poll<Item> poll() override {
+        if (!token_)
+            token_ = resolver_->doResolve(hostname_, flags_);
+        return token_->poll();
+    }
 
 private:
     std::shared_ptr<AsyncResolver> resolver_;
     std::string hostname_;
     int flags_;
-    State s_ = INIT;
-
-    io::wait_handle_ptr<AsyncResolver::WaitHandle> handle_;
+    std::unique_ptr<AsyncResolver::CompletionToken> token_;
 };
-
-inline ResolverFuture resolve(std::shared_ptr<AsyncResolver> resolver,
-        const std::string &name,
-        int flags = AsyncResolver::EnableTypeA4)
-{
-    return ResolverFuture(resolver, name, flags);
-}
 
 }
 }

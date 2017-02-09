@@ -13,7 +13,7 @@ inline std::error_code current_system_error(int e = errno) {
 }
 
 AsyncResolver::AsyncResolver(EventExecutor *ev)
-    : ev_(ev), io_(ev->getLoop()), timer_(ev->getLoop()), check_(ev->getLoop()) {
+    : IOObject(ev), io_(ev->getLoop()), timer_(ev->getLoop()), check_(ev->getLoop()) {
     static struct dns_ctx * kDefaultCtx = [] () noexcept {
         dns_init(&dns_defctx, 0);
         return &dns_defctx;
@@ -62,10 +62,10 @@ void AsyncResolver::onPrepare(ev::prepare &watcher, int revent) {
         dns_timeouts(ctx_, 30, 0);
 }
 
-io::wait_handle_ptr<AsyncResolver::WaitHandle>
+std::unique_ptr<AsyncResolver::CompletionToken>
 AsyncResolver::doResolve(const std::string &hostname, int flags) {
     if (!flags) throw std::invalid_argument("empty resolve flags");
-    io::wait_handle_ptr<WaitHandle> p(new WaitHandle(this));
+    auto p = folly::make_unique<CompletionToken>(this);
     if (flags & EnableTypeA4) {
         struct dns_query *q = dns_submit_a4(ctx_, hostname.c_str(), 0, queryA4Callback, p.get());
         p->q[TypeA4] = q;
@@ -74,9 +74,7 @@ AsyncResolver::doResolve(const std::string &hostname, int flags) {
         struct dns_query *q = dns_submit_a6(ctx_, hostname.c_str(), 0, queryA6Callback, p.get());
         p->q[TypeA6] = q;
     }
-    if (!p->hasPending())
-        return nullptr;
-    p->addRef();
+    p->checkPending();
     return p;
 }
 
@@ -102,7 +100,7 @@ void AsyncResolver::timerSetupCallback(struct dns_ctx *ctx, int timeout, void *d
 void AsyncResolver::queryA4Callback(struct dns_ctx *ctx, struct dns_rr_a4 *result, void *data)
 {
     int s = dns_status(ctx);
-    WaitHandle *h = static_cast<WaitHandle*>(data);
+    CompletionToken *h = static_cast<CompletionToken*>(data);
     FUTURES_DLOG(INFO) << "queryA4Callback " << s;
 
     if (!s && result && result->dnsa4_addr) {
@@ -113,13 +111,13 @@ void AsyncResolver::queryA4Callback(struct dns_ctx *ctx, struct dns_rr_a4 *resul
     free(result);
 
     h->q[RecordType::TypeA4] = nullptr;
-    h->doReady();
+    h->checkPending();
 }
 
 void AsyncResolver::queryA6Callback(struct dns_ctx *ctx, struct dns_rr_a6 *result, void *data)
 {
     int s = dns_status(ctx);
-    WaitHandle *h = static_cast<WaitHandle*>(data);
+    CompletionToken *h = static_cast<CompletionToken*>(data);
     FUTURES_DLOG(INFO) << "queryA6Callback " << s;
 
     if (!s && result && result->dnsa6_addr) {
@@ -130,7 +128,7 @@ void AsyncResolver::queryA6Callback(struct dns_ctx *ctx, struct dns_rr_a6 *resul
     free(result);
 
     h->q[RecordType::TypeA6] = nullptr;
-    h->doReady();
+    h->checkPending();
 }
 
 AsyncResolver::~AsyncResolver() {
@@ -141,36 +139,5 @@ AsyncResolver::~AsyncResolver() {
         dns_free(ctx_);
 }
 
-ResolverFuture::ResolverFuture(std::shared_ptr<AsyncResolver> resolver,
-        const std::string &hostname, int flags)
-    : resolver_(resolver),
-      hostname_(hostname), flags_(flags) {
-}
-
-Poll<ResolverFuture::Item> ResolverFuture::poll()
-{
-    switch(s_) {
-        case INIT:
-            handle_ = resolver_->doResolve(hostname_, flags_);
-            if (!handle_)
-                return Poll<Item>(ResolverException("submit"));
-            handle_.park();
-            s_ = SUBMITTED;
-            break;
-        case SUBMITTED: {
-            if (!handle_->isReady())
-                break;
-            auto r = std::move(handle_->result());
-            handle_.reset();
-            s_ = DONE;
-            return makePollReady(std::move(r));
-        }
-        default:
-            throw InvalidPollStateException();
-    }
-    return Poll<Item>(not_ready);
-}
-
 }
 }
-

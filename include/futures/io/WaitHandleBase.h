@@ -6,147 +6,104 @@
 namespace futures {
 namespace io {
 
-template <typename T>
-class wait_handle_ptr;
+class CompletionToken;
 
-template <typename T>
-struct WaitHandleBase : public EventWatcherBase {
+class IOObject : private EventWatcherBase {
 public:
-    WaitHandleBase() {}
+    inline void attachChild(CompletionToken *tok);
+    inline void dettachChild(CompletionToken *tok);
 
-    void addRef() {
-        ref_count_.fetch_add(1, std::memory_order_relaxed);
+    void cleanup(int reason) override {
+        while (!pending_.empty())
+            pending_.front().cleanup(reason);
+        onCancel();
     }
 
-    void release() {
-        if (ref_count_.fetch_sub(1, std::memory_order_release) == 1) {
-            std::atomic_thread_fence(std::memory_order_acquire);
-            delete this;
-        }
+    IOObject(EventExecutor* ev) : ev_(ev) {}
+    virtual ~IOObject() = default;
+
+    EventExecutor *getExecutor() { return ev_; }
+
+    virtual void onCancel() {}
+private:
+    EventExecutor *ev_;
+    EventWatcherBase::EventList pending_;
+};
+
+class CompletionToken : private EventWatcherBase {
+public:
+    CompletionToken(IOObject *parent)
+        : parent_(parent) {
+        parent_->attachChild(this);
     }
 
-    void unpark() {
+    virtual void onCancel() = 0;
+
+    void cleanup(int reason) override {
+        if (s_ != STARTED) return;
+        onCancel();
+        parent_->dettachChild(this);
+        s_ = CANCELLED;
+        notify();
+    }
+
+    void notifyDone() {
+        assert(s_ == STARTED);
+        s_ = DONE;
+        parent_->dettachChild(this);
+        notify();
+    }
+
+    Try<bool> pollState() {
+        switch (s_) {
+            case STARTED:
+                task_ = CurrentTask::park();
+                return Try<bool>(false);
+            case DONE:
+                return Try<bool>(true);
+            case CANCELLED:
+                return Try<bool>(FutureCancelledException());
+        };
+    }
+
+    virtual ~CompletionToken() {
+        assert(!task_);
+        assert(s_ != STARTED);
+    }
+
+    IOObject *getIOObject() {
+        return parent_;
+    }
+private:
+    IOObject *parent_;
+    Optional<Task> task_;
+
+    enum State {
+        STARTED,
+        DONE,
+        CANCELLED,
+    };
+    State s_ = STARTED;
+
+    void notify() {
         if (task_) task_->unpark();
         task_.clear();
     }
 
-    virtual void cancel() {}
-
-    virtual void cleanup(int r) override {
-        cancel();
-        unpark();
-    }
-
-    Try<T> &result() {
-        return result_;
-    }
-
-    void set(Try<T> &&v) {
-        result_ = std::move(v);
-    }
-
-    void set(const Try<T> &v) {
-        result_ = v;
-    }
-
-    bool isReady() const {
-        return result_.hasException() || result_.hasValue();
-    }
-protected:
-
-    virtual ~WaitHandleBase() {
-        FUTURES_DLOG(INFO) << "WaitHandle destory";
-    }
-
-    void park() {
-        task_ = CurrentTask::park();
-    }
-
-    void clearTask() {
-        task_.clear();
-    }
-
-    template <typename V>
-    friend class wait_handle_ptr;
-
-    Optional<Task> task_;
-    Try<T> result_;
-    std::atomic_size_t ref_count_{1};
+    friend class IOObject;
 };
 
-template<typename T>
-class wait_handle_ptr
-{
-public:
-    wait_handle_ptr(T *ptr = nullptr)
-        : pointer(ptr), is_owner(false) {}
-    /*
-    wait_handle_ptr<T>& operator=(T *ptr) {
-        pointer = ptr;
-        return *this;
-    }
-    */
-    wait_handle_ptr(wait_handle_ptr<T> && other)
-    {
-        pointer = other.pointer;
-        is_owner = other.is_owner;
-        other.pointer = nullptr;
-    }
-    wait_handle_ptr<T>& operator=(wait_handle_ptr<T> && other)
-    {
-        pointer = other.pointer;
-        is_owner = other.is_owner;
-        other.pointer = nullptr;
-        return *this;
-    }
-    ~wait_handle_ptr() {
-        reset();
-    }
+void IOObject::attachChild(CompletionToken *tok) {
+    if (pending_.empty())
+        ev_->linkWatcher(this);
+    pending_.push_back(*tok);
+}
 
-    T* operator->() const { return pointer; }
-    T& operator*() const { return *pointer; }
-
-    void reset() {
-        if (pointer) {
-            if (is_owner) {
-                pointer->cancel();
-                pointer->clearTask();
-            }
-            pointer->release();
-        }
-        pointer = nullptr;
-        is_owner = false;
-    }
-
-    T* get() { return pointer; }
-    const T* get() const { return pointer; }
-
-    wait_handle_ptr(wait_handle_ptr<T> const & other)
-        : pointer(other.pointer), is_owner(other.is_owner()) {
-        if (pointer) pointer->addRef();
-    }
-
-    wait_handle_ptr<T> & operator=(wait_handle_ptr<T> const & other) {
-        if (this == &other) return;
-        reset();
-        pointer = other.pointer;
-        is_owner = other.is_owner;
-        if (pointer) pointer->addRef();
-        return *this;
-    }
-
-    bool operator==(T *ptr) { return pointer == ptr; }
-    bool operator!=(T *ptr) { return pointer != ptr; }
-    operator bool() { return pointer != nullptr; }
-
-    void park() {
-        pointer->park();
-        is_owner = true;
-    }
-private:
-    T *pointer;
-    bool is_owner;
-};
+void IOObject::dettachChild(CompletionToken *tok) {
+    pending_.erase(EventWatcherBase::EventList::s_iterator_to(*tok));
+    if (pending_.empty())
+        ev_->unlinkWatcher(this);
+}
 
 }
 }
