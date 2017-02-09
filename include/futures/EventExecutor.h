@@ -71,8 +71,10 @@ public:
                 run->run();
                 delete run;
             }
-            if (pendings_.empty())
+            if (pendings_.empty()) {
+                FUTURES_DLOG(INFO) << "no pending events";
                 break;
+            }
             if (wait_stop_) {
                 // cleanup
                 FUTURES_DLOG(INFO) << "cleaning up";

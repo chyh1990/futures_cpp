@@ -26,8 +26,7 @@ public:
         if (s_ != NotReady) throw InvalidChannelStateException();
         v_ = std::forward<V>(v);
         s_ = Ready;
-        if (rx_task_.hasValue())
-            rx_task_->unpark();
+        notify();
         return true;
     }
 

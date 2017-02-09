@@ -63,8 +63,8 @@ public:
     }
 
     template <typename V>
-    void setValue(V&& v) {
-        s_.send(Try<T>(std::forward<V>(v)));
+    bool setValue(V&& v) {
+        return s_.send(Try<T>(std::forward<V>(v)));
     }
 
     void setException(folly::exception_wrapper ex) {
