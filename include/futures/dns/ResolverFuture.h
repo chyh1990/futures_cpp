@@ -60,13 +60,14 @@ public:
         }
 
         Poll<ResolverResult> poll() {
-            auto v = pollState();
-            if (v.hasException())
-                return Poll<ResolverResult>(v.exception());
-            if (*v) {
-                return makePollReady(std::move(addrs_));
-            } else {
+            switch (getState()) {
+            case STARTED:
+                park();
                 return Poll<ResolverResult>(not_ready);
+            case DONE:
+                return makePollReady(std::move(addrs_));
+            case CANCELLED:
+                return Poll<ResolverResult>(FutureCancelledException());
             }
         }
 

@@ -32,6 +32,12 @@ private:
 
 class CompletionToken : private EventWatcherBase {
 public:
+    enum State {
+        STARTED,
+        DONE,
+        CANCELLED,
+    };
+
     CompletionToken(IOObject *parent)
         : parent_(parent) {
         parent_->attachChild(this);
@@ -48,26 +54,27 @@ public:
     }
 
     void notifyDone() {
-        assert(s_ == STARTED);
+        if (s_ != STARTED) return;
         s_ = DONE;
         parent_->dettachChild(this);
         notify();
     }
 
-    Try<bool> pollState() {
-        switch (s_) {
-            case STARTED:
-                task_ = CurrentTask::park();
-                return Try<bool>(false);
-            case DONE:
-                return Try<bool>(true);
-            case CANCELLED:
-                return Try<bool>(FutureCancelledException());
-        };
+    State getState() {
+        return s_;
+    }
+
+    void park() {
+        task_ = CurrentTask::park();
     }
 
     IOObject *getIOObject() {
         return parent_;
+    }
+
+    void notify() {
+        if (task_) task_->unpark();
+        task_.clear();
     }
 
     void addRef() {
@@ -91,18 +98,7 @@ private:
     IOObject *parent_;
     Optional<Task> task_;
     std::atomic_size_t ref_count_{1};
-
-    enum State {
-        STARTED,
-        DONE,
-        CANCELLED,
-    };
     State s_ = STARTED;
-
-    void notify() {
-        if (task_) task_->unpark();
-        task_.clear();
-    }
 
     friend class IOObject;
 };
