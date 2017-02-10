@@ -50,10 +50,6 @@ public:
             q.fill(nullptr);
         }
 
-        ~CompletionToken() {
-            cleanup(0);
-        }
-
         void checkPending() {
             if (!hasPending())
                 notifyDone();
@@ -71,7 +67,7 @@ public:
             }
         }
 
-        void onCancel() override {
+        void onCancel(CancelReason reason) override {
             for (int i = 0; i < 4; ++i) {
                 if (q[i]) {
                     static_cast<AsyncResolver*>(getIOObject())->doCancel(q[i]);
@@ -79,6 +75,12 @@ public:
                 }
             }
         }
+
+    protected:
+        ~CompletionToken() {
+            cleanup(CancelReason::UserCancel);
+        }
+
     private:
         bool hasPending() const {
             for (auto e: q)

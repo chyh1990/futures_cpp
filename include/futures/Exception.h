@@ -23,10 +23,36 @@ public:
       : std::runtime_error("Cannot use moved future") {}
 };
 
+enum class CancelReason {
+  Unknown = 0,
+  ExecutorShutdown,
+  IOObjectShutdown,
+  UserCancel,
+};
+
 class FutureCancelledException: public std::runtime_error {
 public:
-  FutureCancelledException()
-    : std::runtime_error("Future cancelled") {}
+  FutureCancelledException(CancelReason r = CancelReason::Unknown)
+    : std::runtime_error(reason(r)),
+    reason_(CancelReason::Unknown) {}
+
+private:
+  CancelReason reason_;
+
+  static std::string reason(CancelReason r) {
+    switch (r) {
+    case CancelReason::Unknown:
+      return "Future cancelled";
+    case CancelReason::ExecutorShutdown:
+      return "Executor shutdown";
+    case CancelReason::IOObjectShutdown:
+      return "IOObject shutdown";
+    case CancelReason::UserCancel:
+      return "UserCancel shutdown";
+    default:
+      return "Unknown cancel reason: " + std::to_string((int)r);
+    }
+  }
 };
 
 class FutureEmptySetException: public std::runtime_error {

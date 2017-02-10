@@ -28,7 +28,7 @@ public:
         task_.unpark();
     }
 
-    void cleanup(int reason) override {
+    void cleanup(CancelReason reason) override {
         task_.unpark();
     }
 

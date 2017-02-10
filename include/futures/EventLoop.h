@@ -21,7 +21,7 @@ public:
     typedef boost::intrusive::list<EventWatcherBase, MemberHookOption,
             boost::intrusive::constant_time_size<true>> EventList;
 
-    virtual void cleanup(int reason) = 0;
+    virtual void cleanup(CancelReason reason) = 0;
     virtual ~EventWatcherBase() = default;
 };
 

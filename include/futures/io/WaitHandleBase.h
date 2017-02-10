@@ -13,10 +13,10 @@ public:
     inline void attachChild(CompletionToken *tok);
     inline void dettachChild(CompletionToken *tok);
 
-    void cleanup(int reason) override {
+    void cleanup(CancelReason reason) override {
         while (!pending_.empty())
             pending_.front().cleanup(reason);
-        onCancel();
+        onCancel(reason);
     }
 
     IOObject(EventExecutor* ev) : ev_(ev) {}
@@ -24,7 +24,7 @@ public:
 
     EventExecutor *getExecutor() { return ev_; }
 
-    virtual void onCancel() {}
+    virtual void onCancel(CancelReason reason) {}
 private:
     EventExecutor *ev_;
     EventWatcherBase::EventList pending_;
@@ -40,23 +40,26 @@ public:
 
     CompletionToken(IOObject *parent)
         : parent_(parent) {
+        assert(parent_);
         parent_->attachChild(this);
     }
 
-    virtual void onCancel() = 0;
+    virtual void onCancel(CancelReason reason) = 0;
 
-    void cleanup(int reason) override {
+    void cleanup(CancelReason reason) override {
         if (s_ != STARTED) return;
-        onCancel();
+        onCancel(reason);
         parent_->dettachChild(this);
+        parent_ = nullptr;
         s_ = CANCELLED;
         notify();
     }
 
     void notifyDone() {
         if (s_ != STARTED) return;
-        s_ = DONE;
         parent_->dettachChild(this);
+        parent_ = nullptr;
+        s_ = DONE;
         notify();
     }
 
@@ -65,6 +68,7 @@ public:
     }
 
     void park() {
+        assert(s_ == STARTED);
         task_ = CurrentTask::park();
     }
 

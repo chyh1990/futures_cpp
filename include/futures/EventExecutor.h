@@ -80,7 +80,7 @@ public:
                 FUTURES_DLOG(INFO) << "cleaning up";
                 while (!pendings_.empty()) {
                     EventWatcherBase &n = pendings_.front();
-                    n.cleanup(0);
+                    n.cleanup(CancelReason::ExecutorShutdown);
                     // no pop here, front node will should be removed by cleanup
                     assert(&pendings_.front() != &n);
                 }

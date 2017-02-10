@@ -197,9 +197,10 @@ public:
         return not_ready;
     }
 
-    void cleanup(int reason) override {
+    void cleanup(CancelReason reason) override {
         io_.stop();
         if (task_) task_->unpark();
+        task_.clear();
     }
 
     virtual ~DescriptorIo() {
