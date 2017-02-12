@@ -12,6 +12,7 @@
 #include <futures/CpuPoolExecutor.h>
 #include <futures/TcpStream.h>
 #include <futures/Timer.h>
+#include <futures/TimeKeeper.h>
 
 using namespace futures;
 
@@ -353,6 +354,29 @@ TEST(Promise, Simple) {
 
 	makePromiseFuture(Try<int>(3));
 	makeReadyPromiseFuture(3);
+}
+
+TEST(Future, TimerKeeper) {
+	EventExecutor ev;
+
+	auto timer = std::make_shared<TimerKeeper>(&ev, 1);
+	auto f = [timer, &ev] (double sec) {
+		return delay(&ev, sec)
+			.andThen([timer] (std::error_code ec) {
+				return TimerKeeperFuture(timer);
+			})
+			.then([] (Try<folly::Unit> err) {
+				if (err.hasException()) {
+					std::cerr << "ERR: " << err.exception().what() << std::endl;
+				} else {
+					std::cerr << "Timeout: " << (uint64_t)(EventExecutor::current()->getNow() * 1000.0) << std::endl;
+				}
+				return makeOk();
+			});
+	};
+	ev.spawn(f(0.2));
+	ev.spawn(f(0.4));
+	ev.run();
 }
 
 int main(int argc, char* argv[]) {

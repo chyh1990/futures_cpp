@@ -25,12 +25,16 @@ public:
     EventExecutor *getExecutor() { return ev_; }
 
     virtual void onCancel(CancelReason reason) {}
+
+    EventWatcherBase::EventList &getPending() {
+        return pending_;
+    }
 private:
     EventExecutor *ev_;
     EventWatcherBase::EventList pending_;
 };
 
-class CompletionToken : private EventWatcherBase {
+class CompletionToken : public EventWatcherBase {
 public:
     enum State {
         STARTED,
@@ -163,6 +167,9 @@ public:
     T* get() { return ptr_; }
     const T* get() const { return ptr_; }
 
+    explicit operator bool() const {
+        return ptr_ != nullptr;
+    }
 private:
     T *ptr_;
 };

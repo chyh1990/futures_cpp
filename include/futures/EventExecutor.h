@@ -112,6 +112,10 @@ public:
     void unlinkWatcher(EventWatcherBase *watcher) {
         pendings_.erase(EventWatcherBase::EventList::s_iterator_to(*watcher));
     }
+
+    double getNow() {
+        return getLoop().now();
+    }
 private:
     std::unique_ptr<ev::dynamic_loop> dyn_loop_;
     // int64_t pending_ = 0;
