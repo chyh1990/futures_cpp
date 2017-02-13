@@ -8,7 +8,7 @@ using namespace futures;
 
 static BoxedFuture<folly::Unit> testDns(EventExecutor *ev, std::shared_ptr<dns::AsyncResolver> resolver) {
     return delay(ev, 0.5).andThen([ev, resolver] (std::error_code ec) {
-            return timeout(ev, dns::ResolverFuture(resolver, "www.baidu.com",
+            return timeout(ev, resolver->resolve("www.baidu.com",
                 dns::AsyncResolver::EnableTypeA4|dns::AsyncResolver::EnableTypeA6), 1);
         })
         .then([] (Try<std::vector<folly::IPAddress>> v) {

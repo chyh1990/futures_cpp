@@ -1,3 +1,4 @@
+#include <futures/dns/Resolver.h>
 #include <futures/dns/ResolverFuture.h>
 #include <futures/Exception.h>
 
@@ -137,6 +138,10 @@ AsyncResolver::~AsyncResolver() {
     check_.stop();
     if (ctx_)
         dns_free(ctx_);
+}
+
+ResolverFuture AsyncResolver::resolve(const std::string &hostname, int flags) {
+    return ResolverFuture(shared_from_this(), hostname, flags);
 }
 
 }
