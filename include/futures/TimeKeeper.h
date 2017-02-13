@@ -63,6 +63,8 @@ public:
         return p;
     }
 
+    inline TimerKeeperFuture timeout();
+
 private:
     const double timeout_;
     ev::timer timer_;
@@ -123,5 +125,9 @@ private:
     TimerKeeper::Ptr ctx_;
     io::intrusive_ptr<TimerKeeper::CompletionToken> tok_;
 };
+
+TimerKeeperFuture TimerKeeper::timeout() {
+    return TimerKeeperFuture(shared_from_this());
+}
 
 }

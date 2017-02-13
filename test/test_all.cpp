@@ -263,7 +263,7 @@ TEST(Future, LoopFn) {
 				return makeOk(makeBreak<std::string, int>("XX"));
 			}
 	});
-	EXPECT_EQ(f.value().value(), "XX");
+	EXPECT_EQ(f.value(), "XX");
 }
 
 TEST(Either, NotSame)
@@ -348,7 +348,7 @@ TEST(Promise, Simple) {
 	});
 #endif
 
-	EXPECT_EQ(f.value().value(), 3);
+	EXPECT_EQ(f.value(), 3);
 	t.join();
 
 	makePromiseFuture(Try<int>(3));
@@ -376,6 +376,12 @@ TEST(Future, TimerKeeper) {
 	ev.spawn(f(0.2));
 	ev.spawn(f(0.4));
 	ev.run();
+}
+
+TEST(Future, OrElse) {
+	auto f = makeErr<int>(folly::make_exception_wrapper<IOError>("ERR"))
+		.orElse([] () { return makeOk(4); });
+	EXPECT_EQ(f.value(), 4);
 }
 
 int main(int argc, char* argv[]) {

@@ -65,7 +65,7 @@ template <typename Fut>
 TimeoutFuture<Fut, TimerKeeperFuture>
 timeout(TimerKeeper::Ptr timer, Fut &&f) {
     return TimeoutFuture<Fut, TimerKeeperFuture>(std::move(f),
-            TimerKeeperFuture(timer));
+            timer->timeout());
 }
 
 

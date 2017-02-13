@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include <futures/Core.h>
+#include <futures/core/Either.h>
 #include <futures/Exception.h>
 #include <futures/Async.h>
 #include <futures/Executor.h>
@@ -26,7 +27,8 @@ template <typename FutA, typename FutB> class JoinFuture;
 template <typename T> class BoxedFuture;
 template <typename T> class SharedFuture;
 // future or error
-template <typename FutT> class MaybeFuture;
+template <typename FutT> class FutureOrExceptionFuture;
+template <typename FutT> class FutureOrValueFuture;
 
 template <typename T, typename F>
 struct AndThenWrapper;
@@ -36,6 +38,8 @@ template <typename T, typename F>
 struct ErrorWrapper;
 template <typename T, typename F>
 struct MapWrapper;
+template <typename T, typename F>
+struct OrElseWrapper;
 
 template <typename Derived, typename T>
 class FutureBase : public IFuture<T> {
@@ -67,6 +71,9 @@ public:
     template <typename F, typename Wrapper = ErrorWrapper<T, F>>
     ThenFuture<folly::Unit, Derived, Wrapper> error(F&& f);
 
+    template <typename F, typename Wrapper = OrElseWrapper<T, F>>
+    ThenFuture<T, Derived, Wrapper> orElse(F&& f);
+
     template <typename FutB>
     JoinFuture<Derived, FutB> join(FutB&& f);
 
@@ -79,8 +86,10 @@ public:
 
     Poll<T> wait();
 
-    Async<T> value() {
-      return wait().value();
+    T value() {
+      auto v = wait();
+      v.throwIfFailed();
+      return folly::moveFromTry(v).value();
     }
 
     FutureBase(const FutureBase &) = delete;
@@ -174,7 +183,7 @@ public:
     }
 
     explicit ErrFuture(folly::exception_wrapper e)
-        : e_(std::move(e)) {
+        : e_(e) {
     }
 private:
 #if DEBUG_FUTURE
@@ -233,15 +242,15 @@ private:
 };
 
 template <typename FutA>
-class MaybeFuture: public FutureBase<MaybeFuture<FutA>, typename isFuture<FutA>::Inner> {
+class FutureOrExceptionFuture: public FutureBase<FutureOrExceptionFuture<FutA>, typename isFuture<FutA>::Inner> {
 public:
     using Item = typename isFuture<FutA>::Inner;
 
-    explicit MaybeFuture(FutA fut)
+    explicit FutureOrExceptionFuture(FutA fut)
       : try_(std::move(fut)) {
     }
 
-    explicit MaybeFuture(folly::exception_wrapper ex)
+    explicit FutureOrExceptionFuture(folly::exception_wrapper ex)
       : try_(std::move(ex)) {
     }
 
@@ -260,6 +269,30 @@ private:
     Try<FutA> try_;
 };
 
+template <typename FutA>
+class FutureOrValueFuture: public FutureBase<FutureOrValueFuture<FutA>, typename isFuture<FutA>::Inner>
+{
+public:
+  using Item = typename isFuture<FutA>::Inner;
+
+  explicit FutureOrValueFuture(FutA&& fut)
+    : v_(folly::left_tag, std::move(fut)) {}
+
+  explicit FutureOrValueFuture(Item&& item)
+    : v_(folly::right_tag, std::move(item)) {}
+
+  Poll<Item> poll() override {
+    if (v_.hasLeft()) {
+      return v_.left().poll();
+    } else if (v_.hasRight()) {
+      return makePollReady(std::move(v_).right());
+    } else {
+      throw InvalidPollStateException();
+    }
+  }
+private:
+  folly::Either<FutA, Item> v_;
+};
 
 template <typename T, typename F>
 class LazyFuture: public FutureBase<LazyFuture<T, F>, T> {
@@ -404,6 +437,11 @@ static inline OkFuture<folly::Unit> makeOk() {
 }
 
 template <typename T>
+ErrFuture<T> makeErr(folly::exception_wrapper w) {
+  return ErrFuture<T>(w);
+}
+
+template <typename T>
 EmptyFuture<T> makeEmpty() {
   return EmptyFuture<T>();
 }
@@ -420,3 +458,4 @@ LazyFuture<Return, F> makeLazy(F&& f) {
 #include <futures/detail/SelectFuture.h>
 #include <futures/detail/WhenAllFuture.h>
 #include <futures/detail/LoopFn.h>
+

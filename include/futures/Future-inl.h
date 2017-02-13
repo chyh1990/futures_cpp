@@ -1,5 +1,4 @@
 #include <futures/Future.h>
-#include <futures/core/Either.h>
 
 namespace futures {
 
@@ -145,11 +144,11 @@ struct AndThenWrapper {
     : func_(std::forward<F>(f)) {
   }
 
-  MaybeFuture<FutR> operator()(Try<T> v) {
+  FutureOrExceptionFuture<FutR> operator()(Try<T> v) {
     if (v.hasValue()) {
-      return MaybeFuture<FutR>(func_(moveFromTry(v)));
+      return FutureOrExceptionFuture<FutR>(func_(moveFromTry(v)));
     } else {
-      return MaybeFuture<FutR>(v.exception());
+      return FutureOrExceptionFuture<FutR>(v.exception());
     }
   }
   F func_;
@@ -162,11 +161,11 @@ struct AndThenWrapper2 {
     : func_(std::forward<F>(f)) {
   }
 
-  MaybeFuture<FutR> operator()(Try<T> v) {
+  FutureOrExceptionFuture<FutR> operator()(Try<T> v) {
     if (v.hasValue()) {
-      return MaybeFuture<FutR>(folly::applyTuple(func_, folly::moveFromTry(v)));
+      return FutureOrExceptionFuture<FutR>(folly::applyTuple(func_, folly::moveFromTry(v)));
     } else {
-      return MaybeFuture<FutR>(v.exception());
+      return FutureOrExceptionFuture<FutR>(v.exception());
     }
   }
   F func_;
@@ -182,6 +181,21 @@ struct ErrorWrapper {
     if (v.hasException())
       func_(v.exception());
     return makeOk();
+  }
+
+  F func_;
+};
+
+template <typename T, typename F>
+struct OrElseWrapper {
+  using FutR = typename std::result_of<F()>::type;
+  OrElseWrapper(F&& f)
+    : func_(std::forward<F>(f)) {}
+
+  FutureOrValueFuture<FutR> operator()(Try<T> v) {
+    if (v.hasException())
+      return FutureOrValueFuture<FutR>(func_());
+    return FutureOrValueFuture<FutR>(folly::moveFromTry(v));
   }
 
   F func_;
@@ -309,6 +323,12 @@ template <typename Derived, typename T>
 template <typename F, typename Wrapper>
 ThenFuture<folly::Unit, Derived, Wrapper> FutureBase<Derived, T>::error(F&& f) {
   return ThenFuture<folly::Unit, Derived, Wrapper>(move_self(), Wrapper(std::forward<F>(f)));
+}
+
+template <typename Derived, typename T>
+template <typename F, typename Wrapper>
+ThenFuture<T, Derived, Wrapper> FutureBase<Derived, T>::orElse(F&& f) {
+  return ThenFuture<T, Derived, Wrapper>(move_self(), Wrapper(std::forward<F>(f)));
 }
 
 template <typename Derived, typename T>
