@@ -11,8 +11,7 @@
 #include <futures/EventExecutor.h>
 #include <futures/CpuPoolExecutor.h>
 #include <futures/TcpStream.h>
-#include <futures/Timer.h>
-#include <futures/TimeKeeper.h>
+#include <futures/Timeout.h>
 
 using namespace futures;
 

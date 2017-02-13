@@ -6,7 +6,12 @@
 
 namespace futures {
 
-class TimerKeeper : public io::IOObject {
+class TimerKeeperFuture;
+
+class TimerKeeper :
+    public io::IOObject,
+    public std::enable_shared_from_this<TimerKeeper>
+    {
 public:
     using Ptr = std::shared_ptr<TimerKeeper>;
 
