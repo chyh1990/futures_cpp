@@ -32,7 +32,4 @@
 #endif
 #endif
 
-// TODO(cppbuild): Add your library interface here
-FUTURES_CPP_API int add_one(int x);
-
 #endif  // INCLUDE_FUTURES_CPP_H_

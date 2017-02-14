@@ -28,7 +28,7 @@ public:
     struct CompletionToken : public io::CompletionToken {
     public:
         CompletionToken(TimerKeeper *ctx, double deadline)
-            : io::CompletionToken(ctx), deadline_(deadline) {}
+            : io::CompletionToken(ctx, IOObject::OpRead), deadline_(deadline) {}
 
         void onCancel(CancelReason r) override {
             // do nothing
@@ -70,8 +70,8 @@ private:
     ev::timer timer_;
 
     void addTimer(CompletionToken *tok) {
-        assert(!getPending().empty());
-        auto p = &getPending().front();
+        // assert(!getPending().empty());
+        auto p = &getPending(IOObject::OpRead).front();
         if (p != tok)
             return;
         timer_.stop();
@@ -86,7 +86,7 @@ private:
         if (rev & ev::ERROR)
             throw std::runtime_error("syscall error");
         if (rev & ev::TIMER) {
-            auto &list = getPending();
+            auto &list = getPending(IOObject::OpRead);
             double now = getExecutor()->getNow();
             while (!list.empty()) {
                 auto p = static_cast<CompletionToken*>(&list.front());

@@ -10,12 +10,20 @@ class CompletionToken;
 
 class IOObject : private EventWatcherBase {
 public:
+    enum Operation {
+        OpConnect,
+        OpRead,
+        OpWrite,
+        OpMaxCount,
+    };
     inline void attachChild(CompletionToken *tok);
     inline void dettachChild(CompletionToken *tok);
 
     void cleanup(CancelReason reason) override {
-        while (!pending_.empty())
-            pending_.front().cleanup(reason);
+        for (int i = 0; i < OpMaxCount; ++i) {
+            while (!pendings_[i].empty())
+                pendings_[i].front().cleanup(reason);
+        }
         onCancel(reason);
     }
 
@@ -26,12 +34,20 @@ public:
 
     virtual void onCancel(CancelReason reason) {}
 
-    EventWatcherBase::EventList &getPending() {
-        return pending_;
+    EventWatcherBase::EventList &getPending(Operation op) {
+        return pendings_[op];
     }
+
 private:
     EventExecutor *ev_;
-    EventWatcherBase::EventList pending_;
+    EventWatcherBase::EventList pendings_[OpMaxCount];
+
+    bool hasPending() const {
+        for (int i = 0; i < OpMaxCount; ++i)
+            if (!pendings_[i].empty())
+                return true;
+        return false;
+    }
 };
 
 class CompletionToken : public EventWatcherBase {
@@ -42,8 +58,8 @@ public:
         CANCELLED,
     };
 
-    CompletionToken(IOObject *parent)
-        : parent_(parent) {
+    CompletionToken(IOObject *parent, IOObject::Operation op)
+        : parent_(parent), op_(op) {
         assert(parent_);
         parent_->attachChild(this);
     }
@@ -96,6 +112,10 @@ public:
         }
     }
 
+    IOObject::Operation operation() const {
+        return op_;
+    }
+
 protected:
     virtual ~CompletionToken() {
         assert(!task_);
@@ -107,6 +127,7 @@ private:
     Optional<Task> task_;
     std::atomic_size_t ref_count_{1};
     State s_ = STARTED;
+    IOObject::Operation op_;
 
     friend class IOObject;
 };
@@ -175,14 +196,14 @@ private:
 };
 
 void IOObject::attachChild(CompletionToken *tok) {
-    if (pending_.empty())
+    if (!hasPending())
         ev_->linkWatcher(this);
-    pending_.push_back(*tok);
+    pendings_[tok->operation()].push_back(*tok);
 }
 
 void IOObject::dettachChild(CompletionToken *tok) {
-    pending_.erase(EventWatcherBase::EventList::s_iterator_to(*tok));
-    if (pending_.empty())
+    pendings_[tok->operation()].erase(EventWatcherBase::EventList::s_iterator_to(*tok));
+    if (!hasPending())
         ev_->unlinkWatcher(this);
 }
 

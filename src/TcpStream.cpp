@@ -117,15 +117,13 @@ ssize_t Socket::recv(void *buf, size_t len, int flags, std::error_code &ec)
 again:
     ssize_t l = ::recv(fd_, buf, len, flags);
     if (l == -1) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return 0;
         if (errno == EINTR)
             goto again;
-        ec = current_system_error();
-        return 0;
-    } else if (l == 0) {
-        // closed by peer
-        ec = std::make_error_code(std::errc::connection_aborted);
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            ec = std::make_error_code(std::errc::operation_would_block);
+        } else {
+            ec = current_system_error();
+        }
         return 0;
     } else {
         return l;
