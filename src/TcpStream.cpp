@@ -155,7 +155,7 @@ void Socket::tcpServer(const std::string& bindaddr, uint16_t port,
     }
 }
 
-Socket Socket::accept(std::error_code& ec) {
+Socket Socket::accept(std::error_code& ec, folly::SocketAddress *peer) {
     struct sockaddr_storage sa;
     socklen_t salen = sizeof(sa);
     int fd;
@@ -182,6 +182,7 @@ again:
             ::close(fd);
             return Socket();
         }
+        peer->setFromSockaddr((struct sockaddr*)&sa);
         return Socket(fd);
     }
 }

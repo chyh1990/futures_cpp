@@ -58,27 +58,40 @@ public:
         CANCELLED,
     };
 
-    CompletionToken(IOObject *parent, IOObject::Operation op)
-        : parent_(parent), op_(op) {
-        assert(parent_);
-        parent_->attachChild(this);
+    CompletionToken(IOObject::Operation op)
+        : parent_(nullptr), op_(op) {
     }
 
     virtual void onCancel(CancelReason reason) = 0;
 
+    void attach(IOObject *parent) {
+        assert(!parent_);
+        parent_ = parent;
+        parent_->attachChild(this);
+        s_ = STARTED;
+    }
+
+    void dettach() {
+        if (!hasAttached()) return;
+        parent_->dettachChild(this);
+        parent_ = nullptr;
+    }
+
+    bool hasAttached() const {
+        return parent_;
+    }
+
     void cleanup(CancelReason reason) override {
         if (s_ != STARTED) return;
         onCancel(reason);
-        parent_->dettachChild(this);
-        parent_ = nullptr;
+        dettach();
         s_ = CANCELLED;
         notify();
     }
 
     void notifyDone() {
         if (s_ != STARTED) return;
-        parent_->dettachChild(this);
-        parent_ = nullptr;
+        dettach();
         s_ = DONE;
         notify();
     }

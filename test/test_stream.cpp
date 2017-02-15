@@ -9,6 +9,7 @@
 #include <futures/channel/ChannelStream.h>
 #include <futures/CpuPoolExecutor.h>
 #include <futures/io/AsyncSocket.h>
+#include <futures/io/AsyncServerSocket.h>
 
 using namespace futures;
 
@@ -235,6 +236,35 @@ TEST(IO, NewSocket) {
                 std::cerr << err.exception().what() << std::endl;
             return makeOk();
         });
+    ev.spawn(std::move(f));
+    ev.run();
+}
+
+static BoxedFuture<folly::Unit> doEcho(io::SocketChannel::Ptr sock) {
+    return io::SockWriteFuture(sock, folly::IOBuf::copyBuffer("XXX", 3))
+        .error([] (folly::exception_wrapper w) {
+            std::cerr << "WRITE_ERR: " << w.what() << std::endl;
+        }).boxed();
+}
+
+TEST(IO, Accept) {
+    EventExecutor ev;
+    folly::SocketAddress addr("127.0.0.1", 8033);
+    auto p = std::make_shared<io::AsyncServerSocket>(&ev, addr);
+
+    int cnt = 0;
+    auto f = p->accept()
+        .forEach2([&cnt] (tcp::Socket sock, folly::SocketAddress peer) mutable {
+            std::cerr << "accept from: " << peer.getAddressStr();
+            auto ev = EventExecutor::current();
+            auto new_sock = std::make_shared<io::SocketChannel>(ev, std::move(sock), peer);
+            ev->spawn(doEcho(new_sock));
+            cnt ++;
+            if (cnt > 1)
+                ev->stop();
+    }).error([] (folly::exception_wrapper err) {
+        std::cerr << err.what() << std::endl;
+    });
     ev.spawn(std::move(f));
     ev.run();
 }

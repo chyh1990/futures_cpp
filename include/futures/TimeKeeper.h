@@ -27,8 +27,8 @@ public:
 
     struct CompletionToken : public io::CompletionToken {
     public:
-        CompletionToken(TimerKeeper *ctx, double deadline)
-            : io::CompletionToken(ctx, IOObject::OpRead), deadline_(deadline) {}
+        CompletionToken(double deadline)
+            : io::CompletionToken(IOObject::OpRead), deadline_(deadline) {}
 
         void onCancel(CancelReason r) override {
             // do nothing
@@ -58,7 +58,7 @@ public:
     };
 
     io::intrusive_ptr<CompletionToken> doTimeout() {
-        io::intrusive_ptr<CompletionToken> p(new CompletionToken(this, getExecutor()->getNow() + timeout_));
+        io::intrusive_ptr<CompletionToken> p(new CompletionToken(getExecutor()->getNow() + timeout_));
         addTimer(p.get());
         return p;
     }
@@ -71,6 +71,7 @@ private:
 
     void addTimer(CompletionToken *tok) {
         // assert(!getPending().empty());
+        tok->attach(this);
         auto p = &getPending(IOObject::OpRead).front();
         if (p != tok)
             return;

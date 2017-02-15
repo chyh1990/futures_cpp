@@ -28,7 +28,7 @@ public:
     void shutdown(int how, std::error_code &ec) noexcept;
     ssize_t writev(const iovec *vec, size_t veclen, int flags, std::error_code &ec);
     ssize_t recv(void *buf, size_t len, int flags, std::error_code &ec);
-    Socket accept(std::error_code& ec);
+    Socket accept(std::error_code& ec, folly::SocketAddress *peer = nullptr);
 
     Socket(const Socket&) = delete;
     Socket& operator=(const Socket&) = delete;

@@ -51,7 +51,7 @@ public:
         ResolverResult addrs_;
 
         CompletionToken(AsyncResolver *r)
-            : io::CompletionToken(r, IOObject::OpRead) {
+            : io::CompletionToken(IOObject::OpRead) {
             q.fill(nullptr);
         }
 

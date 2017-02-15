@@ -15,10 +15,16 @@ class SocketChannel : public IOObject {
         CLOSED,
     };
 
-    enum {
+    enum ReadResult {
         READ_EOF = 0,
         READ_WOULDBLOCK = -1,
         READ_ERROR = -2,
+    };
+
+    enum ShutdownFlags {
+        SHUT_WRITE_PENDING = 0x01,
+        SHUT_WRITE = 0x02,
+        SHUT_READ = 0x04,
     };
 public:
     using Ptr = std::shared_ptr<SocketChannel>;
@@ -30,71 +36,46 @@ public:
         wio_.set<SocketChannel, &SocketChannel::onEvent>(this);
     }
 
+    SocketChannel(EventExecutor *ev, tcp::Socket socket,
+            const folly::SocketAddress& peer = folly::SocketAddress())
+        : IOObject(ev),
+          socket_(std::move(socket)), peer_addr_(peer), s_(CONNECTED),
+          rio_(ev->getLoop()), wio_(ev->getLoop())
+    {
+        assert(socket_.fd() != -1);
+
+        rio_.set<SocketChannel, &SocketChannel::onEvent>(this);
+        wio_.set<SocketChannel, &SocketChannel::onEvent>(this);
+        wio_.set(socket_.fd(), ev::WRITE);
+        rio_.set(socket_.fd(), ev::READ);
+    }
+
     struct ReaderCompletionToken : public io::CompletionToken {
         std::error_code ec;
-        std::unique_ptr<folly::IOBuf> buf_;
+        // std::unique_ptr<folly::IOBuf> buf_;
         using Item = std::unique_ptr<folly::IOBuf>;
 
-        ReaderCompletionToken(SocketChannel *ctx)
-            : io::CompletionToken(ctx, IOObject::OpRead) {
+        ReaderCompletionToken()
+            : io::CompletionToken(IOObject::OpRead) {
         }
 
         void onCancel(CancelReason r) override {
         }
 
-        ssize_t doRead(std::error_code &ec) {
-            while (true) {
-                if (!buf_) {
-                    buf_ = folly::IOBuf::create(4096);
-                }
-                if (!buf_->prev()->tailroom())
-                    buf_->prev()->appendChain(folly::IOBuf::create(4096));
-                folly::IOBuf *last = buf_->prev();
-                size_t to_read = last->tailroom();
-                auto s = static_cast<SocketChannel*>(getIOObject());
-                ssize_t read_ret = s->performRead(last->writableTail(), last->tailroom(), ec);
-                FUTURES_DLOG(INFO) << "readed: " << read_ret;
-                if (read_ret == READ_ERROR) {
-                    this->ec = ec;
-                    notifyDone();
-                } else if (read_ret == READ_WOULDBLOCK) {
-                    notify();
-                    return read_ret;
-                } else if (read_ret == READ_EOF) {
-                    FUTURES_DLOG(INFO) << "Socket EOF";
-                    notifyDone();
-                    return read_ret;
-                } else {
-                    last->append(read_ret);
-                    if (read_ret < to_read) {
-                        notify();
-                        return read_ret;
-                    }
-                }
-            }
+        virtual void readEof() {
+            notifyDone();
         }
 
-        Poll<Optional<Item>> pollStream() {
-            switch (getState()) {
-            case STARTED:
-                if (!buf_ || buf_->empty()) {
-                    park();
-                    return Poll<Optional<Item>>(not_ready);
-                } else {
-                    return makePollReady(Optional<Item>(std::move(buf_)));
-                }
-            case DONE:
-                if (buf_ && !buf_->empty()) {
-                    return makePollReady(Optional<Item>(std::move(buf_)));
-                }
-                if (ec) {
-                    return Poll<Optional<Item>>(IOError("recv", ec));
-                } else {
-                    return makePollReady(Optional<Item>());
-                }
-            case CANCELLED:
-                return Poll<Optional<Item>>(FutureCancelledException());
-            }
+        virtual void readError(std::error_code ec) {
+            this->ec = ec;
+            notifyDone();
+        }
+
+        virtual void dataReady(ssize_t size) = 0;
+        virtual void prepareBuffer(void **buf, size_t *data) = 0;
+
+        ~ReaderCompletionToken() {
+            cleanup(CancelReason::UserCancel);
         }
     };
 
@@ -102,8 +83,8 @@ public:
         std::error_code ec;
         ssize_t written = 0;
 
-        WriterCompletionToken(SocketChannel *ctx, std::unique_ptr<folly::IOBuf> buf)
-            : io::CompletionToken(ctx, IOObject::OpWrite), buf_(std::move(buf)) {
+        WriterCompletionToken(std::unique_ptr<folly::IOBuf> buf)
+            : io::CompletionToken(IOObject::OpWrite), buf_(std::move(buf)) {
             size_t chain_len = buf_->countChainElements();
             if (!chain_len)
                 throw std::invalid_argument("empty chain");
@@ -117,11 +98,10 @@ public:
             }
         }
 
-        bool doWrite() {
+        bool doWrite(std::error_code &ec) {
             auto s = static_cast<SocketChannel*>(getIOObject());
             size_t countWritten;
             size_t partialWritten;
-            std::error_code ec;
             ssize_t totalWritten = s->performWrite(piovec_, iovec_len_,
                     &countWritten, &partialWritten, ec);
             if (ec) {
@@ -180,7 +160,7 @@ public:
         std::error_code ec;
 
         ConnectCompletionToken(SocketChannel *ctx)
-            : io::CompletionToken(ctx, IOObject::OpConnect)
+            : io::CompletionToken(IOObject::OpConnect)
         {
         }
 
@@ -214,20 +194,23 @@ public:
         io::intrusive_ptr<ConnectCompletionToken> tok(new ConnectCompletionToken(this));
         if (startConnect(tok->ec)) {
             tok->notifyDone();
+        } else {
+            tok->attach(this);
         }
         return tok;
     }
 
-    io::intrusive_ptr<ReaderCompletionToken> doRead() {
+    io::intrusive_ptr<ReaderCompletionToken> doRead(std::unique_ptr<ReaderCompletionToken> p) {
         if (!getPending(IOObject::OpRead).empty())
             throw IOError("Already reading");
         if (s_ == INITED)
             throw IOError("Not connecting");
-        io::intrusive_ptr<ReaderCompletionToken> tok(new ReaderCompletionToken(this));
-        if (s_ == CLOSED) {
+        io::intrusive_ptr<ReaderCompletionToken> tok(p.release());
+        if ((s_ == CLOSED) || (shutdown_flags_ & SHUT_READ)) {
             tok->ec = std::make_error_code(std::errc::connection_aborted);
             tok->notifyDone();
         } else {
+            tok->attach(this);
             rio_.start();
         }
         return tok;
@@ -236,17 +219,25 @@ public:
     io::intrusive_ptr<WriterCompletionToken> doWrite(std::unique_ptr<folly::IOBuf> buf) {
         if (s_ == INITED)
             throw IOError("Not connecting");
-        io::intrusive_ptr<WriterCompletionToken> tok(new WriterCompletionToken(this, std::move(buf)));
-        if (s_ == CLOSED) {
+        io::intrusive_ptr<WriterCompletionToken> tok(new WriterCompletionToken(std::move(buf)));
+        if ((s_ == CLOSED)
+                || (shutdown_flags_ & SHUT_WRITE_PENDING)
+                || (shutdown_flags_ & SHUT_WRITE)) {
             tok->ec = std::make_error_code(std::errc::connection_aborted);
             tok->notifyDone();
         } else if (s_ == CONNECTED) {
             // TODO try send immediately
+            tok->attach(this);
             wio_.start();
         }
         return tok;
     }
     io::intrusive_ptr<WriterCompletionToken> doFlush();
+
+    bool good() const {
+        return (s_ == CONNECTING || s_ == CONNECTED)
+            && (shutdown_flags_ == 0);
+    }
 
     bool startConnect(std::error_code &ec);
 
@@ -257,7 +248,57 @@ public:
             size_t* partialWritten,
             std::error_code &ec);
 
-    ssize_t performRead(void* buf, size_t buflen, std::error_code &ec) {
+    ssize_t performRead(ReaderCompletionToken *tok, std::error_code &ec);
+
+    void onCancel(CancelReason r) {
+        if (s_ != CLOSED)
+            forceClose();
+    }
+
+    void shutdownWrite() {
+        if (getPending(IOObject::OpWrite).empty()) {
+            shutdownWriteNow();
+            return;
+        }
+        shutdown_flags_ |= SHUT_WRITE_PENDING;
+    }
+
+    void shutdownWriteNow() {
+        if (shutdown_flags_ & SHUT_WRITE)
+            return;
+        if (shutdown_flags_ & SHUT_READ) {
+            cleanup(CancelReason::IOObjectShutdown);
+            return;
+        }
+        std::error_code ec;
+        switch (s_) {
+        case CONNECTED:
+            shutdown_flags_ |= SHUT_WRITE;
+            wio_.stop();
+            socket_.shutdown(::SHUT_WR, ec);
+            failAllWrites();
+            return;
+        case CONNECTING:
+            shutdown_flags_ |= SHUT_WRITE_PENDING;
+            failAllWrites();
+            return;
+        case INITED:
+            shutdown_flags_ |= SHUT_WRITE_PENDING;
+            return;
+        case CLOSED:
+            FUTURES_LOG(WARNING) << "shutdown a closed socket";
+        }
+    }
+
+private:
+    tcp::Socket socket_;
+    folly::SocketAddress peer_addr_;
+    State s_ = INITED;
+    int shutdown_flags_ = 0;
+    ev::io rio_;
+    ev::io wio_;
+
+    ssize_t doAsyncRead(void* buf, size_t buflen, std::error_code &ec) {
         ssize_t r = socket_.recv(buf, buflen, 0, ec);
         if (!ec) {
             return r == 0 ? READ_EOF : r;
@@ -268,13 +309,6 @@ public:
         }
     }
 
-private:
-    tcp::Socket socket_;
-    folly::SocketAddress peer_addr_;
-    State s_ = INITED;
-    ev::io rio_;
-    ev::io wio_;
-
     void onEvent(ev::io& watcher, int revent) {
         if (revent & ev::ERROR)
             throw std::runtime_error("syscall error");
@@ -284,18 +318,18 @@ private:
                 if (!reader.empty()) {
                     auto first = static_cast<ReaderCompletionToken*>(&reader.front());
                     std::error_code ec;
-                    ssize_t ret = first->doRead(ec);
+                    ssize_t ret = performRead(first, ec);
                     if (ret == READ_EOF) {
                         // todo
                         closeRead();
                     } else if (ret == READ_ERROR) {
-                        forceClose();
+                        cleanup(CancelReason::IOObjectShutdown);
                     } else if (ret == READ_WOULDBLOCK) {
                         // nothing
                     }
-                }
-                if (reader.empty())
+                } else {
                     rio_.stop();
+                }
             }
         }
         if (revent & ev::WRITE) {
@@ -312,7 +346,7 @@ private:
                 if (connected) {
                     s_ = CONNECTED;
                 } else {
-                    forceClose();
+                    cleanup(CancelReason::IOObjectShutdown);
                     return;
                 }
             }
@@ -320,8 +354,16 @@ private:
                 auto &writer = getPending(IOObject::OpWrite);
                 while (!writer.empty()) {
                     auto p = static_cast<WriterCompletionToken*>(&writer.front());
-                    if (p->doWrite()) {
+                    std::error_code ec;
+                    if (p->doWrite(ec)) {
                         p->notifyDone();
+                        if (ec) {
+                            cleanup(CancelReason::IOObjectShutdown);
+                            return;
+                        }
+                        if (shutdown_flags_ & SHUT_WRITE_PENDING) {
+                            shutdownWriteNow();
+                        }
                     } else {
                         break;
                     }
@@ -334,14 +376,24 @@ private:
 
     void closeRead() {
         rio_.stop();
+        shutdown_flags_ |= SHUT_READ;
     }
 
     void forceClose() {
         wio_.stop();
         rio_.stop();
         socket_.close();
-        cleanup(CancelReason::IOObjectShutdown);
         s_ = CLOSED;
+        shutdown_flags_ |= (SHUT_READ | SHUT_WRITE);
+    }
+
+    void failAllWrites() {
+        auto &writer = getPending(IOObject::OpWrite);
+        while (!writer.empty()) {
+            auto p = static_cast<WriterCompletionToken*>(&writer.front());
+            p->ec = std::make_error_code(std::errc::connection_aborted);
+            p->notifyDone();
+        }
     }
 };
 
@@ -385,13 +437,57 @@ class SockReadStream : public StreamBase<SockReadStream, std::unique_ptr<folly::
 public:
     using Item = std::unique_ptr<folly::IOBuf>;
 
+    struct StreamCompletionToken : public SocketChannel::ReaderCompletionToken {
+    public:
+        StreamCompletionToken() {}
+
+        Poll<Optional<Item>> pollStream() {
+            switch (getState()) {
+            case STARTED:
+                if (!buf_ || buf_->empty()) {
+                    park();
+                    return Poll<Optional<Item>>(not_ready);
+                } else {
+                    return makePollReady(Optional<Item>(std::move(buf_)));
+                }
+            case DONE:
+                if (buf_ && !buf_->empty()) {
+                    return makePollReady(Optional<Item>(std::move(buf_)));
+                }
+                if (ec) {
+                    return Poll<Optional<Item>>(IOError("recv", ec));
+                } else {
+                    return makePollReady(Optional<Item>());
+                }
+            case CANCELLED:
+                return Poll<Optional<Item>>(FutureCancelledException());
+            }
+        }
+
+        void prepareBuffer(void **buf, size_t *bufLen) override {
+            if (!buf_) buf_ = folly::IOBuf::create(2048);
+            if (buf_->tailroom() == 0)
+                buf_->prev()->appendChain(folly::IOBuf::create(2048));
+            auto last = buf_->prev();
+            *buf = last->writableTail();
+            *bufLen = last->tailroom();
+        }
+
+        void dataReady(ssize_t size) override {
+            buf_->prev()->append(size);
+            notify();
+        }
+    private:
+        std::unique_ptr<folly::IOBuf> buf_;
+    };
+
     SockReadStream(SocketChannel::Ptr ptr)
         : ptr_(ptr) {}
 
     Poll<Optional<Item>> poll() override {
         if (!tok_)
-            tok_ = ptr_->doRead();
-        return tok_->pollStream();
+            tok_ = ptr_->doRead(folly::make_unique<StreamCompletionToken>());
+        return static_cast<StreamCompletionToken*>(tok_.get())->pollStream();
     }
 private:
     SocketChannel::Ptr ptr_;
