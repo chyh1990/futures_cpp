@@ -38,6 +38,9 @@ public:
         return pendings_[op];
     }
 
+    IOObject(const IOObject&) = delete;
+    IOObject& operator=(const IOObject&) = delete;
+
 private:
     EventExecutor *ev_;
     EventWatcherBase::EventList pendings_[OpMaxCount];

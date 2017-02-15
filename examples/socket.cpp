@@ -11,6 +11,7 @@ struct SharedState {
     size_t counter = 0;
 };
 
+#if 0
 static BoxedFuture<folly::Unit> process(EventExecutor &ev,
         std::shared_ptr<SharedState> state, tcp::SocketPtr client) {
     return delay(&ev, 0.5)
@@ -57,5 +58,11 @@ int main(int argc, char *argv[])
     loop.spawn(std::move(sig));
     loop.run();
 
+    return 0;
+}
+#endif
+
+int main(int argc, char *argv[])
+{
     return 0;
 }

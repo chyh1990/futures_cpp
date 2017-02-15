@@ -45,7 +45,7 @@ ssize_t SocketChannel::performWrite(
     return totalWritten;
 }
 
-ssize_t SocketChannel::performRead(SocketChannel::ReaderCompletionToken *tok, std::error_code &ec) {
+ssize_t SocketChannel::performRead(ReaderCompletionToken *tok, std::error_code &ec) {
     while (true) {
         void *buf;
         size_t bufLen = 0;
@@ -56,6 +56,7 @@ ssize_t SocketChannel::performRead(SocketChannel::ReaderCompletionToken *tok, st
         FUTURES_DLOG(INFO) << "readed: " << read_ret;
         if (read_ret == READ_ERROR) {
             tok->readError(ec);
+            return read_ret;
         } else if (read_ret == READ_WOULDBLOCK) {
             tok->dataReady(0);
             return read_ret;

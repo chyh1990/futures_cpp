@@ -3,11 +3,12 @@
 #include <futures/TcpStream.h>
 #include <futures/io/WaitHandleBase.h>
 #include <futures/core/SocketAddress.h>
+#include <futures/io/Channel.h>
 
 namespace futures {
 namespace io {
 
-class SocketChannel : public IOObject {
+class SocketChannel : public Channel {
     enum State {
         INITED,
         CONNECTING,
@@ -30,7 +31,7 @@ public:
     using Ptr = std::shared_ptr<SocketChannel>;
 
     SocketChannel(EventExecutor *ev)
-        : IOObject(ev), rio_(ev->getLoop()), wio_(ev->getLoop())
+        : Channel(ev), rio_(ev->getLoop()), wio_(ev->getLoop())
     {
         rio_.set<SocketChannel, &SocketChannel::onEvent>(this);
         wio_.set<SocketChannel, &SocketChannel::onEvent>(this);
@@ -38,7 +39,7 @@ public:
 
     SocketChannel(EventExecutor *ev, tcp::Socket socket,
             const folly::SocketAddress& peer = folly::SocketAddress())
-        : IOObject(ev),
+        : Channel(ev),
           socket_(std::move(socket)), peer_addr_(peer), s_(CONNECTED),
           rio_(ev->getLoop()), wio_(ev->getLoop())
     {
@@ -50,111 +51,6 @@ public:
         rio_.set(socket_.fd(), ev::READ);
     }
 
-    struct ReaderCompletionToken : public io::CompletionToken {
-        std::error_code ec;
-        // std::unique_ptr<folly::IOBuf> buf_;
-        using Item = std::unique_ptr<folly::IOBuf>;
-
-        ReaderCompletionToken()
-            : io::CompletionToken(IOObject::OpRead) {
-        }
-
-        void onCancel(CancelReason r) override {
-        }
-
-        virtual void readEof() {
-            notifyDone();
-        }
-
-        virtual void readError(std::error_code ec) {
-            this->ec = ec;
-            notifyDone();
-        }
-
-        virtual void dataReady(ssize_t size) = 0;
-        virtual void prepareBuffer(void **buf, size_t *data) = 0;
-
-        ~ReaderCompletionToken() {
-            cleanup(CancelReason::UserCancel);
-        }
-    };
-
-    struct WriterCompletionToken : public io::CompletionToken {
-        std::error_code ec;
-        ssize_t written = 0;
-
-        WriterCompletionToken(std::unique_ptr<folly::IOBuf> buf)
-            : io::CompletionToken(IOObject::OpWrite), buf_(std::move(buf)) {
-            size_t chain_len = buf_->countChainElements();
-            if (!chain_len)
-                throw std::invalid_argument("empty chain");
-            if (chain_len <= kMaxIovLen) {
-                iovec_len_ = buf_->fillIov(small_vec_, kMaxIovLen);
-                piovec_ = small_vec_;
-            } else {
-                vec_ = buf_->getIov();
-                piovec_ = vec_.data();
-                iovec_len_ = vec_.size();
-            }
-        }
-
-        bool doWrite(std::error_code &ec) {
-            auto s = static_cast<SocketChannel*>(getIOObject());
-            size_t countWritten;
-            size_t partialWritten;
-            ssize_t totalWritten = s->performWrite(piovec_, iovec_len_,
-                    &countWritten, &partialWritten, ec);
-            if (ec) {
-                this->ec = ec;
-                return true;
-            } else {
-                written += totalWritten;
-                if (countWritten == iovec_len_) {
-                    // done
-                    return true;
-                } else {
-                    piovec_ += countWritten;
-                    iovec_len_ -= countWritten;
-                    assert(iovec_len_ > 0);
-                    piovec_[0].iov_base = reinterpret_cast<char*>(piovec_[0].iov_base) + partialWritten;
-                    piovec_[0].iov_len -= partialWritten;
-                    return false;
-                }
-            }
-        }
-
-        void onCancel(CancelReason r) override {
-        }
-
-        Poll<ssize_t> poll() {
-            switch (getState()) {
-            case STARTED:
-                park();
-                return Poll<ssize_t>(not_ready);
-            case DONE:
-                if (ec)
-                    return Poll<ssize_t>(IOError("writev", ec));
-                else
-                    return makePollReady(written);
-            case CANCELLED:
-                return Poll<ssize_t>(FutureCancelledException());
-            }
-        }
-
-    protected:
-        ~WriterCompletionToken() {
-            cleanup(CancelReason::UserCancel);
-        }
-
-        std::unique_ptr<folly::IOBuf> buf_;
-
-        static const size_t kMaxIovLen = 32;
-        iovec small_vec_[kMaxIovLen];
-        std::vector<iovec> vec_;
-
-        iovec *piovec_ = nullptr;
-        size_t iovec_len_ = 0;
-    };
 
     struct ConnectCompletionToken : public io::CompletionToken {
         std::error_code ec;
@@ -207,8 +103,7 @@ public:
             throw IOError("Not connecting");
         io::intrusive_ptr<ReaderCompletionToken> tok(p.release());
         if ((s_ == CLOSED) || (shutdown_flags_ & SHUT_READ)) {
-            tok->ec = std::make_error_code(std::errc::connection_aborted);
-            tok->notifyDone();
+            tok->readError(std::make_error_code(std::errc::connection_aborted));
         } else {
             tok->attach(this);
             rio_.start();
@@ -216,15 +111,14 @@ public:
         return tok;
     }
 
-    io::intrusive_ptr<WriterCompletionToken> doWrite(std::unique_ptr<folly::IOBuf> buf) {
+    io::intrusive_ptr<WriterCompletionToken> doWrite(std::unique_ptr<WriterCompletionToken> p) {
         if (s_ == INITED)
             throw IOError("Not connecting");
-        io::intrusive_ptr<WriterCompletionToken> tok(new WriterCompletionToken(std::move(buf)));
+        io::intrusive_ptr<WriterCompletionToken> tok(p.release());
         if ((s_ == CLOSED)
                 || (shutdown_flags_ & SHUT_WRITE_PENDING)
                 || (shutdown_flags_ & SHUT_WRITE)) {
-            tok->ec = std::make_error_code(std::errc::connection_aborted);
-            tok->notifyDone();
+            tok->writeError(std::make_error_code(std::errc::connection_aborted));
         } else if (s_ == CONNECTED) {
             // TODO try send immediately
             tok->attach(this);
@@ -240,15 +134,6 @@ public:
     }
 
     bool startConnect(std::error_code &ec);
-
-    ssize_t performWrite(
-            const iovec* vec,
-            size_t count,
-            size_t* countWritten,
-            size_t* partialWritten,
-            std::error_code &ec);
-
-    ssize_t performRead(ReaderCompletionToken *tok, std::error_code &ec);
 
     void onCancel(CancelReason r) {
         if (s_ != CLOSED)
@@ -309,6 +194,15 @@ private:
         }
     }
 
+    ssize_t performWrite(
+            const iovec* vec,
+            size_t count,
+            size_t* countWritten,
+            size_t* partialWritten,
+            std::error_code &ec);
+
+    ssize_t performRead(ReaderCompletionToken *tok, std::error_code &ec);
+
     void onEvent(ev::io& watcher, int revent) {
         if (revent & ev::ERROR)
             throw std::runtime_error("syscall error");
@@ -355,16 +249,31 @@ private:
                 while (!writer.empty()) {
                     auto p = static_cast<WriterCompletionToken*>(&writer.front());
                     std::error_code ec;
-                    if (p->doWrite(ec)) {
+                    iovec *vec;
+                    size_t vecLen = 0;
+                    p->prepareIov(&vec, &vecLen);
+                    if (!vecLen) {
                         p->notifyDone();
-                        if (ec) {
-                            cleanup(CancelReason::IOObjectShutdown);
-                            return;
-                        }
-                        if (shutdown_flags_ & SHUT_WRITE_PENDING) {
-                            shutdownWriteNow();
+                        continue;
+                    }
+                    size_t countWritten;
+                    size_t partialWritten;
+                    ssize_t totalWritten = performWrite(vec, vecLen,
+                            &countWritten, &partialWritten, ec);
+                    if (!ec) {
+                        p->updateIov(totalWritten, countWritten, partialWritten);
+                        if (countWritten == vecLen) {
+                            p->notifyDone();
+                            if (shutdown_flags_ & SHUT_WRITE_PENDING) {
+                                shutdownWriteNow();
+                                break;
+                            }
+                        } else {
+                            break;
                         }
                     } else {
+                        p->writeError(ec);
+                        cleanup(CancelReason::IOObjectShutdown);
                         break;
                     }
                 }
@@ -391,8 +300,7 @@ private:
         auto &writer = getPending(IOObject::OpWrite);
         while (!writer.empty()) {
             auto p = static_cast<WriterCompletionToken*>(&writer.front());
-            p->ec = std::make_error_code(std::errc::connection_aborted);
-            p->notifyDone();
+            p->writeError(std::make_error_code(std::errc::connection_aborted));
         }
     }
 };
@@ -424,20 +332,20 @@ public:
 
     Poll<Item> poll() override {
         if (!tok_)
-            tok_ = ptr_->doWrite(std::move(buf_));
+            tok_ = ptr_->doWrite(folly::make_unique<WriterCompletionToken>(std::move(buf_)));
         return tok_->poll();
     }
 private:
     SocketChannel::Ptr ptr_;
     std::unique_ptr<folly::IOBuf> buf_;
-    io::intrusive_ptr<SocketChannel::WriterCompletionToken> tok_;
+    io::intrusive_ptr<WriterCompletionToken> tok_;
 };
 
 class SockReadStream : public StreamBase<SockReadStream, std::unique_ptr<folly::IOBuf>> {
 public:
     using Item = std::unique_ptr<folly::IOBuf>;
 
-    struct StreamCompletionToken : public SocketChannel::ReaderCompletionToken {
+    struct StreamCompletionToken : public ReaderCompletionToken {
     public:
         StreamCompletionToken() {}
 
@@ -454,8 +362,8 @@ public:
                 if (buf_ && !buf_->empty()) {
                     return makePollReady(Optional<Item>(std::move(buf_)));
                 }
-                if (ec) {
-                    return Poll<Optional<Item>>(IOError("recv", ec));
+                if (getErrorCode()) {
+                    return Poll<Optional<Item>>(IOError("recv", getErrorCode()));
                 } else {
                     return makePollReady(Optional<Item>());
                 }
@@ -491,7 +399,7 @@ public:
     }
 private:
     SocketChannel::Ptr ptr_;
-    io::intrusive_ptr<SocketChannel::ReaderCompletionToken> tok_;
+    io::intrusive_ptr<ReaderCompletionToken> tok_;
 };
 
 

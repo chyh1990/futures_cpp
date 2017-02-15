@@ -5,6 +5,9 @@
 #include <futures/http/HttpCodec.h>
 #include <futures/io/PipelinedRpcFuture.h>
 #include <futures/io/IoStream.h>
+#include <futures/io/AsyncSocket.h>
+#include <futures/io/AsyncServerSocket.h>
+#include <futures/io/WorkIOObject.h>
 #include <thread>
 #include <iostream>
 
@@ -81,12 +84,12 @@ private:
 #endif
 
 static BoxedFuture<folly::Unit> process(EventExecutor *ev,
-    tcp::SocketPtr client,
+    io::SocketChannel::Ptr client,
     std::shared_ptr<DummyService> service) {
     return makeRpcFuture(
-      io::FramedStream<http::HttpV1Decoder>(folly::make_unique<tcp::SocketIOHandler>(ev, client)),
+      io::FramedStream<http::HttpV1Decoder>(client),
       service,
-      io::FramedSink<http::HttpV1Encoder>(folly::make_unique<tcp::SocketIOHandler>(ev, client))
+      io::FramedSink<http::HttpV1Encoder>(client)
     ).then([] (Try<folly::Unit> err) {
       if (err.hasException())
         std::cerr << err.exception().what() << std::endl;
@@ -108,6 +111,7 @@ public:
     }
 };
 
+#if 0
 static BoxedFuture<folly::Unit> processWs(EventExecutor *ev,
     tcp::SocketPtr client,
     std::shared_ptr<DummyWebsocketService> service) {
@@ -121,63 +125,67 @@ static BoxedFuture<folly::Unit> processWs(EventExecutor *ev,
       return makeOk();
     }).boxed();
 }
-
-
+#endif
 
 int main(int argc, char *argv[])
 {
-    std::error_code ec;
-    auto s = std::make_shared<tcp::Socket>();
-    s->tcpServer("127.0.0.1", 8011, 32, ec);
-    assert(!ec);
-    const int kWorkers = 4;
 
-    EventExecutor loop(true);
-    std::unique_ptr<EventExecutor> worker_loops[kWorkers];
-    auto pservice = std::make_shared<DummyService>();
-    auto pWsservice = std::make_shared<DummyWebsocketService>();
+  EventExecutor loop(true);
 
-    for (int i = 0; i < kWorkers; i++)
-        worker_loops[i].reset(new EventExecutor());
+  folly::SocketAddress bindAddr("127.0.0.1", 8011);
+  auto s = std::make_shared<io::AsyncServerSocket>(&loop, bindAddr);
+  const int kWorkers = 4;
 
-    std::cerr << "listening: " << 8011 << std::endl;
-    auto f = tcp::Stream::acceptStream(&loop, s)
-        .forEach([&worker_loops, pservice, pWsservice] (tcp::SocketPtr client) {
-                auto loop = worker_loops[rand() % kWorkers].get();
-                // auto loop = EventExecutor::current();
-                loop->spawn(process(loop, client, pservice));
-                // loop->spawn(processWs(loop, client, pWsservice));
-                })
-        .then([] (Try<folly::Unit> err) {
-            if (err.hasException())
-                std::cerr << "Error: " << err.exception().what() << std::endl;
-            return makeOk();
+  std::unique_ptr<EventExecutor> worker_loops[kWorkers];
+  auto pservice = std::make_shared<DummyService>();
+  auto pWsservice = std::make_shared<DummyWebsocketService>();
+
+  io::WorkIOObject work_obj[kWorkers];
+  for (int i = 0; i < kWorkers; i++) {
+    worker_loops[i].reset(new EventExecutor());
+    work_obj[i].attach(worker_loops[i].get());
+  }
+
+  std::cerr << "listening: " << 8011 << std::endl;
+  auto f = s->accept()
+    .forEach2([&worker_loops, pservice, pWsservice] (tcp::Socket client, folly::SocketAddress peer) {
+        // std::cerr << "accept from: " << peer.getAddressStr() << ":" << peer.getPort();
+        auto loop = worker_loops[rand() % kWorkers].get();
+        auto new_sock = std::make_shared<io::SocketChannel>(loop, std::move(client), peer);
+        // auto loop = EventExecutor::current();
+        loop->spawn(process(loop, new_sock, pservice));
+        // loop->spawn(processWs(loop, client, pWsservice));
+        })
+  .then([] (Try<folly::Unit> err) {
+      if (err.hasException())
+        std::cerr << "Error: " << err.exception().what() << std::endl;
+      return makeOk();
+      });
+  auto sig = signal(&loop, SIGINT)
+    .andThen([&] (int signum) {
+        std::cerr << "killed by " << signum << std::endl;
+        EventExecutor::current()->stop();
+        for (int i = 0; i < kWorkers; ++i) {
+        worker_loops[i]->spawn(makeLazy([] () {
+              EventExecutor::current()->stop();
+              return folly::unit;
+              }));
+        }
+        return makeOk();
         });
-    auto sig = signal(&loop, SIGINT)
-        .andThen([&] (int signum) {
-                std::cerr << "killed by " << signum << std::endl;
-                EventExecutor::current()->stop();
-                for (int i = 0; i < kWorkers; ++i) {
-                worker_loops[i]->spawn(makeLazy([] () {
-                            EventExecutor::current()->stop();
-                            return folly::unit;
-                        }));
-                }
-                return makeOk();
-                });
-    loop.spawn(std::move(f));
-    loop.spawn(std::move(sig));
+  loop.spawn(std::move(f));
+  loop.spawn(std::move(sig));
 
-    std::vector<std::thread> workers;
-    for (int i = 0 ;i <  kWorkers; ++i) {
-        auto worker = std::thread([&worker_loops, i] () {
-                worker_loops[i]->run(true);
-                });
-        workers.push_back(std::move(worker));
-    }
-    loop.run();
-    for (auto &e: workers)
-        e.join();
+  std::vector<std::thread> workers;
+  for (int i = 0 ;i <  kWorkers; ++i) {
+    auto worker = std::thread([&worker_loops, i] () {
+        worker_loops[i]->run(true);
+        });
+    workers.push_back(std::move(worker));
+  }
+  loop.run();
+  for (auto &e: workers)
+    e.join();
 
-    return 0;
+  return 0;
 }

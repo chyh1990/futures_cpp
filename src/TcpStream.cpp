@@ -187,6 +187,7 @@ again:
     }
 }
 
+#if 0
 Poll<SocketPtr> ConnectFuture::poll() {
     std::error_code ec;
     switch (s_) {
@@ -256,6 +257,7 @@ Poll<Optional<SocketPtr>> AcceptStream::poll() {
     }
     return Poll<Optional<Item>>(not_ready);
 }
+#endif
 
 }
 }

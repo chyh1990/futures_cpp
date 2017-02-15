@@ -53,6 +53,7 @@ private:
     int fd_;
 };
 
+#if 0
 using SocketPtr = std::shared_ptr<Socket>;
 
 class SocketIOHandler : public io::DescriptorIo {
@@ -158,6 +159,7 @@ public:
     }
 
 };
+#endif
 
 
 }

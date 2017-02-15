@@ -86,6 +86,10 @@ public:
 
     inline AcceptStream accept();
 
+    void onCancel(CancelReason reason) override {
+        FUTURES_DLOG(INFO) << "Cancelling";
+    }
+
 private:
     tcp::Socket socket_;
     ev::io rio_;

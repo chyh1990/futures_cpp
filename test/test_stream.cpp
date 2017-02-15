@@ -29,6 +29,7 @@ TEST(Stream, Iter) {
     f.wait();
 }
 
+#if 0
 static BoxedFuture<folly::Unit> process(EventExecutor &ev, tcp::SocketPtr client) {
     return delay(&ev, 0.5)
         .andThen([&ev, client] (std::error_code ec) {
@@ -181,6 +182,7 @@ TEST(Stream, Http) {
     loop.run();
 
 }
+#endif
 
 TEST(Stream, Channel) {
     EventExecutor loop;

@@ -52,29 +52,40 @@ template <typename T>
 nullstream operator<<(nullstream o, const T& x) { return o;}
 
 class LogMessage{
-	std::string level;
-	std::ostream &ofs;
-	public:
-		LogMessage(const std::string &l)
-			:level(l), ofs(std::cerr){
-			stream() << "[" << level << "]\t";
-		}
-		LogMessage(std::ostream &o)
-			:level("ERROR"), ofs(o){
-			stream() << "[" << level << "]\t";
-		}
-		inline std::ostream &stream(){
-			return ofs;
-		}
-		~LogMessage() {
-			stream() << std::endl;
-		}
+  std::string level;
+  std::ostream &ofs;
+  public:
+  LogMessage(const std::string &l, const char *file, int line)
+    :level(l), ofs(std::cerr){
+      stream() << "[" << level << "] " << basename(file) << ":" << line << " " ;
+    }
+  LogMessage(std::ostream &o)
+    :level("ERROR"), ofs(o){
+      stream() << "[" << level << "] ";
+    }
+  inline std::ostream &stream(){
+    return ofs;
+  }
+  ~LogMessage() {
+    stream() << std::endl;
+  }
+
+private:
+  std::string basename(const std::string &full) {
+    std::size_t found = full.find_last_of("/\\");
+    if (found == std::string::npos) {
+      return full;
+    } else {
+      return full.substr(found + 1);
+    }
+  }
 };
+
 }
 
-#define 	FUTURES_LOG(type)   futures::debug::LogMessage(#type).stream()
+#define 	FUTURES_LOG(type)   futures::debug::LogMessage(#type, __FILE__, __LINE__).stream()
 #if FUTURES_ENABLE_DEBUG_PRINT
-#define 	FUTURES_DLOG(type)   futures::debug::LogMessage(#type).stream()
+#define 	FUTURES_DLOG(type)   FUTURES_LOG(type)
 #else
 #define     FUTURES_DLOG(type)   futures::debug::nullstream()
 #endif

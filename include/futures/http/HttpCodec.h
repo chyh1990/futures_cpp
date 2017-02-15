@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <futures/io/IoFuture.h>
+#include <futures/io/Io.h>
 
 namespace futures {
 namespace http {
