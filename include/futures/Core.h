@@ -5,6 +5,7 @@
 #include <futures/core/Optional.h>
 #include <futures/core/ApplyTuple.h>
 #include <futures/core/MoveWrapper.h>
+#include <futures/core/variant/variant.hpp>
 // #include <futures/core/FBString.h>
 
 #ifndef NDEBUG
@@ -15,6 +16,9 @@
 #include <sstream>
 
 namespace futures {
+
+template <typename... Args>
+using Variant = mapbox::util::variant<Args...>;
 
 template <typename T>
 struct isTry : std::false_type {};
