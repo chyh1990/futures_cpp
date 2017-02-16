@@ -72,6 +72,7 @@ class LogMessage{
   }
   ~LogMessage() {
     stream() << std::endl;
+    if (level == "FATAL") abort();
   }
 
 private:
