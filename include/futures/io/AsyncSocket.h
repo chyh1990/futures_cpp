@@ -286,6 +286,7 @@ private:
     void closeRead() {
         rio_.stop();
         shutdown_flags_ |= SHUT_READ;
+        // shutdownWrite();
     }
 
     void forceClose() {
