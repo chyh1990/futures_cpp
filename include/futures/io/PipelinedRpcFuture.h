@@ -76,9 +76,11 @@ public:
     }
 
     void dispatch(Resp&& in) override {
-        if (closed_)
-            throw DispatchException("already closed");
-        FUTURES_CHECK (!promise_.empty());
+        // if (closed_)
+        //     throw DispatchException("already closed");
+        if (promise_.empty()) {
+            throw DispatchException("unexpected server response");
+        }
         promise_.front().setValue(std::move(in));
         promise_.pop_front();
     }
@@ -86,9 +88,7 @@ public:
     void dispatchErr(folly::exception_wrapper err) override {
         for (auto &e: promise_)
             e.setException(err);
-        promise_.clear();
-        in_flight_.clear();
-        closed_ = true;
+        closeNow();
     }
 
     Poll<Optional<Req>> poll() override {
@@ -110,8 +110,7 @@ public:
     }
 
     BoxedFuture<folly::Unit> close() override {
-        closed_ = true;
-        notify();
+        closeNow();
         return makeOk().boxed();
     }
 
@@ -128,6 +127,13 @@ private:
     void notify() {
         if (task_) task_->unpark();
         task_.clear();
+    }
+
+    void closeNow() {
+        promise_.clear();
+        in_flight_.clear();
+        closed_ = true;
+        notify();
     }
 };
 
@@ -158,6 +164,7 @@ public:
                         dispatcher_->dispatch(std::move(v).value().value());
                     } catch (std::exception &e) {
                         FUTURES_DLOG(INFO) << "dispatcher exception: " << e.what();
+                        transport_->shutdownWrite();
                         return Poll<Item>(folly::exception_wrapper(std::current_exception(), e));
                     }
                 } else {

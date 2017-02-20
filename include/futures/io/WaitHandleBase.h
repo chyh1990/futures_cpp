@@ -8,7 +8,7 @@ namespace io {
 
 class CompletionToken;
 
-class IOObject : private EventWatcherBase {
+class IOObject : public EventWatcherBase {
 public:
     enum Operation {
         OpConnect,

@@ -38,9 +38,11 @@ int main(int argc, char *argv[])
                         std::cerr << "CALL: " << req.exception().what() << std::endl;
                     } else {
                         auto buf = folly::moveFromTry(req);
-                        buf->coalesce();
-                        std::string out((const char*)buf->data(), buf->length());
-                        std::cerr << out << std::endl;
+                        if (buf) {
+                            buf->coalesce();
+                            std::string out((const char*)buf->data(), buf->length());
+                            std::cerr << out << std::endl;
+                        }
                     }
                     return client->close();
                 });

@@ -7,7 +7,6 @@
 #include <futures/io/IoStream.h>
 #include <futures/io/AsyncSocket.h>
 #include <futures/io/AsyncServerSocket.h>
-#include <futures/io/WorkIOObject.h>
 #include <thread>
 #include <iostream>
 
@@ -20,7 +19,7 @@ public:
         std::cerr << req << std::endl;
         auto c = folly::makeMoveWrapper(std::move(req));
         return delay(EventExecutor::current(), 1.0)
-          .andThen([c] (std::error_code ec) mutable {
+          .andThen([c] (folly::Unit) mutable {
               http::Response resp;
               resp.http_errno = 200;
               resp.body.append(std::move(c->body));
@@ -141,10 +140,10 @@ int main(int argc, char *argv[])
   auto pservice = std::make_shared<DummyService>();
   auto pWsservice = std::make_shared<DummyWebsocketService>();
 
-  io::WorkIOObject work_obj[kWorkers];
+  // io::WorkIOObject work_obj[kWorkers];
   for (int i = 0; i < kWorkers; i++) {
     worker_loops[i].reset(new EventExecutor());
-    work_obj[i].attach(worker_loops[i].get());
+    // work_obj[i].attach(worker_loops[i].get());
   }
 
   std::cerr << "listening: " << 8011 << std::endl;
@@ -170,10 +169,10 @@ int main(int argc, char *argv[])
         worker_loops[i]->spawn(makeLazy([] () {
               EventExecutor::current()->stop();
               return folly::unit;
-              }));
+            }));
         }
         return makeOk();
-        });
+      });
   loop.spawn(std::move(f));
   loop.spawn(std::move(sig));
 

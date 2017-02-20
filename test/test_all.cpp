@@ -173,7 +173,7 @@ TEST(Executor, Event) {
 TEST(Executor, Timer) {
 	EventExecutor ev;
 	auto f = TimerFuture(&ev, 1)
-		.andThen([&ev] (std::error_code _ec) {
+		.andThen([&ev] (folly::Unit) {
 			std::cerr << "DONE" << std::endl;
 			return makeOk();
 		});
@@ -205,7 +205,7 @@ TEST(Future, AllTimeout) {
 
 	std::vector<BoxedFuture<int>> f;
 	f.emplace_back(TimerFuture(&ev, 1.0)
-		.then([] (Try<std::error_code> v) {
+		.then([] (Try<folly::Unit> v) {
 			if (v.hasException())
 				std::cerr << "ERROR" << std::endl;
 			else
@@ -213,7 +213,7 @@ TEST(Future, AllTimeout) {
 			return makeOk(1);
 		}).boxed());
 	f.emplace_back(TimerFuture(&ev, 2.0)
-		.then([] (Try<std::error_code> v) {
+		.then([] (Try<folly::Unit> v) {
 			if (v.hasException())
 				std::cerr << "ERROR" << std::endl;
 			else
@@ -235,7 +235,7 @@ BoxedFuture<std::vector<int>> rwait(EventExecutor &ev, std::vector<int> &v, int 
 		return makeOk(std::move(v)).boxed();
 	return TimerFuture(&ev, 0.1)
 		.andThen(
-			[&ev, &v, n] (std::error_code) {
+			[&ev, &v, n] (folly::Unit) {
 				v.push_back(n);
 				return rwait(ev, v, n - 1);
 			}).boxed();
@@ -361,7 +361,7 @@ TEST(Future, TimerKeeper) {
 	auto timer = std::make_shared<TimerKeeper>(&ev, 1);
 	auto f = [timer, &ev] (double sec) {
 		return delay(&ev, sec)
-			.andThen([timer] (std::error_code ec) {
+			.andThen([timer] (folly::Unit) {
 				return TimerKeeperFuture(timer);
 			})
 			.then([] (Try<folly::Unit> err) {

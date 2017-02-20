@@ -2,66 +2,94 @@
 
 #include <futures/EventLoop.h>
 #include <futures/EventExecutor.h>
+#include <futures/io/WaitHandleBase.h>
 
 namespace futures {
 
-class TimerIOHandler : public EventWatcherBase {
-private:
-    ev::timer timer_;
-    Task task_;
-    EventExecutor *reactor_;
-
+class Timer: public io::IOObject {
 public:
-    TimerIOHandler(EventExecutor* reactor, Task task, double ts)
-        : timer_(reactor->getLoop()), task_(task), reactor_(reactor) {
+    enum State {
+        INIT,
+        WAITING,
+        DONE,
+        CANCELLED
+    };
+
+    Timer(EventExecutor* reactor, double ts)
+        : io::IOObject(reactor),
+        timer_(reactor->getLoop()) {
         FUTURES_DLOG(INFO) << "TimerHandler new";
-        timer_.set(this);
-        reactor_->linkWatcher(this);
-        timer_.start(ts);
+        timer_.set<Timer, &Timer::onEvent>(this);
+        timer_.set(ts);
+    }
+
+    void start() {
+        if (s_ == INIT || s_ == CANCELLED) {
+            timer_.start();
+            s_ = WAITING;
+            getExecutor()->linkWatcher(this);
+        } else {
+            throw InvalidPollStateException();
+        }
     }
 
     bool hasTimeout() {
         return timer_.remaining() <= 0.0;
     }
 
-    void operator()(ev::timer &io, int revents) {
+    void onCancel(CancelReason reason) override {
+        if (s_ == WAITING) {
+            timer_.stop();
+            getExecutor()->unlinkWatcher(this);
+        }
+        notify();
+    }
+
+    void park() {
+        task_ = CurrentTask::park();
+    }
+
+    ~Timer() {
+        onCancel(CancelReason::IOObjectShutdown);
+    }
+
+    State getState() const {
+        return s_;
+    }
+
+private:
+    ev::timer timer_;
+    Optional<Task> task_;
+    State s_ = INIT;
+
+    void onEvent(ev::timer &io, int revents) {
         FUTURES_DLOG(INFO) << "TimerHandler call";
-        task_.unpark();
+        if (revents & ev::TIMER) {
+            getExecutor()->unlinkWatcher(this);
+            s_ = DONE;
+        }
+        notify();
     }
 
-    void cleanup(CancelReason reason) override {
-        task_.unpark();
+    void notify() {
+        if (task_) task_->unpark();
+        task_.clear();
     }
 
-    ~TimerIOHandler() {
-        FUTURES_DLOG(INFO) << "TimerHandler stop";
-        reactor_->unlinkWatcher(this);
-        timer_.stop();
-    }
 };
 
-class TimerFuture : public FutureBase<TimerFuture, std::error_code>
+class TimerFuture : public FutureBase<TimerFuture, folly::Unit>
 {
 public:
-    enum State {
-        INIT,
-        WAITING,
-        TIMEOUT,
-        CANCELLED,
-    };
-
-    typedef std::error_code Item;
-
     TimerFuture(EventExecutor *ev, double after)
-        : reactor_(ev), after_(after), s_(INIT) {}
+        : reactor_(ev), after_(after)  {}
 
-    Poll<Item> poll();
+    Poll<Item> poll() override;
 
 private:
     EventExecutor *reactor_;
     double after_;
-    State s_;
-    std::unique_ptr<TimerIOHandler> handler_;
+    std::unique_ptr<Timer> timer_;
 };
 
 inline TimerFuture delay(EventExecutor* ev, double after) {

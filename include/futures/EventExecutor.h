@@ -78,9 +78,12 @@ public:
             }
             if (wait_stop_) {
                 FUTURES_DLOG(INFO) << "abort registered watchers";
-                while (!pendings_.empty())
+                while (!pendings_.empty()) {
                     pendings_.front().cleanup(CancelReason::ExecutorShutdown);
-                if (!getRunning()) break;
+                }
+                if (!getRunning()) {
+                    break;
+                }
             }
             FUTURES_DLOG(INFO) << "START POLL: " << this;
             getLoop().run(EVRUN_ONCE);

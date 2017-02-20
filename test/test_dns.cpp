@@ -9,7 +9,7 @@ using namespace futures;
 static BoxedFuture<folly::Unit> testDns(EventExecutor *ev,
         TimerKeeper::Ptr timer,
         dns::AsyncResolver::Ptr resolver) {
-    return delay(ev, 0.5).andThen([ev, timer, resolver] (std::error_code ec) {
+    return delay(ev, 0.5).andThen([ev, timer, resolver] (folly::Unit) {
             return timeout(timer, resolver->resolve("www.baidu.com",
                 dns::AsyncResolver::EnableTypeA4|dns::AsyncResolver::EnableTypeA6));
         })

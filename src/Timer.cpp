@@ -3,23 +3,20 @@
 namespace futures {
 
 Poll<TimerFuture::Item> TimerFuture::poll() {
-    std::error_code ec;
-    switch (s_) {
-        case INIT:
+    if (!timer_) {
+        timer_.reset(new Timer(reactor_, after_));
+        timer_->start();
+    }
+    switch (timer_->getState()) {
+        case Timer::WAITING:
             // should we update Task after each poll?
-            handler_.reset(new TimerIOHandler(reactor_, *CurrentTask::current_task(), after_));
-            s_ = WAITING;
+            timer_->park();
             break;
-        case WAITING:
-            assert(handler_.get() != nullptr);
-            if (!handler_->hasTimeout())
-                break;
-            s_ = TIMEOUT;
-            handler_.reset();
-            return Poll<Item>(Async<Item>(ec));
-        case CANCELLED:
+        case Timer::CANCELLED:
             return Poll<Item>(FutureCancelledException());
-        case TIMEOUT:
+        case Timer::DONE:
+            return makePollReady(folly::unit);
+        default:
             throw InvalidPollStateException();
     }
 
