@@ -120,8 +120,8 @@ public:
         : io_(std::move(io)) {
     }
 
-    Try<void> startSend(Out& item) override {
-        return codec_.encode(item, q_);
+    Try<void> startSend(Out&& item) override {
+        return codec_.encode(std::move(item), q_);
     }
 
     Poll<folly::Unit> pollComplete() override {

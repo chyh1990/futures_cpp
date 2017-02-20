@@ -228,7 +228,7 @@ static const char *getHttpStatusLine(unsigned int http_errno) {
     return errs.get(http_errno);
 }
 
-Try<void> HttpV1Encoder::encode(http::Response& out,
+Try<void> HttpV1Encoder::encode(http::Response&& out,
         folly::IOBufQueue &buf) {
     IOBufStreambuf sb(&buf);
     std::ostream ss(&sb);
@@ -378,10 +378,10 @@ RFC6455Decoder::~RFC6455Decoder() = default;
 RFC6455Decoder::RFC6455Decoder(RFC6455Decoder &&) = default;
 RFC6455Decoder& RFC6455Decoder::operator=(RFC6455Decoder &&) = default;
 
-Try<void> RFC6455Encoder::encode(DataFrame& out,
+Try<void> RFC6455Encoder::encode(DataFrame&& out,
         folly::IOBufQueue &buf) {
     if (out.getType() == DataFrame::HANDSHAKE_RESPONSE) {
-        return http_encoder_.encode(*out.getHandshakeResponse(), buf);
+        return http_encoder_.encode(std::move(*out.getHandshakeResponse()), buf);
     } else {
         return Try<void>(IOError("unimpl"));
     }

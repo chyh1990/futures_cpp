@@ -180,7 +180,7 @@ public:
             auto v = folly::moveFromTry(r);
             if (v.isReady()) {
                 if (v->hasValue()) {
-                    auto r = sink_.startSend(v->value());
+                    auto r = sink_.startSend(std::move(v->value()));
                     if (r.hasException()) {
                         FUTURES_DLOG(ERROR) << "encode frame error: " << r.exception().what();
                         dispatcher_->dispatchErr(r.exception());

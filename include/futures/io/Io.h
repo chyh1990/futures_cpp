@@ -6,42 +6,10 @@
 #include <futures/Exception.h>
 #include <futures/core/IOBuf.h>
 #include <futures/core/IOBufQueue.h>
+#include <futures/codec/Codec.h>
 
 namespace futures {
 namespace io {
-
-template <class Derived, typename T>
-class DecoderBase {
-public:
-    using Out = T;
-
-    Try<Optional<Out>> decode(folly::IOBufQueue &buf) {
-        assert(0 && "unimpl");
-    }
-
-    Try<Out> decode_eof(folly::IOBufQueue &buf) {
-        auto v = static_cast<Derived*>(this)->decode(buf);
-        if (v.hasException())
-            return Try<Out>(v.exception());
-        if (v->hasValue()) {
-            return Try<Out>(folly::moveFromTry(v).value());
-        } else {
-            return Try<Out>(IOError("eof"));
-        }
-    }
-
-};
-
-template <class Derived, typename T>
-class EncoderBase {
-public:
-    using Out = T;
-
-    Try<void> encode(Out&& out,
-            folly::IOBufQueue &buf) {
-        assert(0 && "unimpl");
-    }
-};
 
 class Readable {
 public:

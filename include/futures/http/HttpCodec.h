@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <futures/io/IoFuture.h>
 #include <futures/io/Io.h>
+#include <futures/codec/Codec.h>
 
 namespace futures {
 namespace http {
@@ -47,7 +48,7 @@ struct Response {
     {}
 };
 
-class HttpV1Decoder: public io::DecoderBase<HttpV1Decoder, Request> {
+class HttpV1Decoder: public codec::DecoderBase<HttpV1Decoder, Request> {
 public:
     using Out = Request;
 
@@ -62,11 +63,11 @@ private:
     std::unique_ptr<Parser> impl_;
 };
 
-class HttpV1Encoder: public io::EncoderBase<HttpV1Encoder, Response> {
+class HttpV1Encoder: public codec::EncoderBase<HttpV1Encoder, Response> {
 public:
     using Out = Response;
 
-    Try<void> encode(Out& out,
+    Try<void> encode(Out&& out,
             folly::IOBufQueue &buf);
 
 };
@@ -117,7 +118,7 @@ private:
     Optional<http::Response> handshake_response_;
 };
 
-class RFC6455Decoder : public io::DecoderBase<RFC6455Decoder, DataFrame> {
+class RFC6455Decoder : public codec::DecoderBase<RFC6455Decoder, DataFrame> {
 public:
     using Out = DataFrame;
 
@@ -140,11 +141,11 @@ private:
     std::unique_ptr<Parser> impl_;
 };
 
-class RFC6455Encoder : public io::EncoderBase<RFC6455Encoder, DataFrame> {
+class RFC6455Encoder : public codec::EncoderBase<RFC6455Encoder, DataFrame> {
 public:
     using Out = DataFrame;
 
-    Try<void> encode(Out& out,
+    Try<void> encode(Out&& out,
             folly::IOBufQueue &buf);
 
 private:

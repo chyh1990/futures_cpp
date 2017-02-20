@@ -3,7 +3,8 @@
 #include <futures/Timer.h>
 #include <futures/io/AsyncSocket.h>
 #include <futures/io/PipelinedRpcFuture.h>
-#include <futures/http/HttpCodec.h>
+#include <futures/codec/LineBasedDecoder.h>
+#include <futures/codec/StringEncoder.h>
 
 using namespace futures;
 
@@ -26,18 +27,20 @@ int main(int argc, char *argv[])
     auto f = io::ConnectFuture(sock, addr)
         .andThen([sock] (folly::Unit) {
             FUTURES_LOG(INFO) << "connected";
-            auto client = std::make_shared<PipelineClientDispatcher<http::Response, http::Request>>();
+            auto client = std::make_shared<PipelineClientDispatcher<std::string,
+                codec::LineBasedOut>>();
             EventExecutor::current()->spawn(
-                    makeRpcClientFuture<io::FramedStream<http::HttpV1Decoder>,
-                    io::FramedSink<http::HttpV1Encoder>>(sock, client));
-            http::Response r;
-            r.headers["XXX"] = "BBB";
-            return (*client)(std::move(r))
-                .then([client] (Try<http::Request> req) {
+                    makeRpcClientFuture<io::FramedStream<codec::LineBasedDecoder>,
+                    io::FramedSink<codec::StringEncoder>>(sock, client));
+            return (*client)("HELLO\r\n")
+                .then([client] (Try<codec::LineBasedOut> req) {
                     if (req.hasException()) {
                         std::cerr << "CALL: " << req.exception().what() << std::endl;
                     } else {
-                        std::cerr << *req << std::endl;
+                        auto buf = folly::moveFromTry(req);
+                        buf->coalesce();
+                        std::string out((const char*)buf->data(), buf->length());
+                        std::cerr << out << std::endl;
                     }
                     return client->close();
                 });
