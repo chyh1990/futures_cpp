@@ -149,6 +149,7 @@ public:
     }
 
     void shutdownWriteNow() {
+        FUTURES_DLOG(INFO) << "shutdown now, fd: " << socket_.fd();
         if (shutdown_flags_ & SHUT_WRITE)
             return;
         if (shutdown_flags_ & SHUT_READ) {
@@ -277,8 +278,11 @@ private:
                         break;
                     }
                 }
-                if (writer.empty())
+                if (writer.empty()) {
                     wio_.stop();
+                    if (shutdown_flags_ & SHUT_WRITE_PENDING)
+                        shutdownWriteNow();
+                }
             }
         }
     }

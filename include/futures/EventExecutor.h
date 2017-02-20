@@ -65,51 +65,43 @@ public:
         while (true) {
             merge_queue();
             while (!q_.empty()) {
-                FUTURES_DLOG(INFO) << "QSIZE: " << q_.size();
+                FUTURES_DLOG(INFO) << "QSIZE: " << q_.size()
+                    << ", running: " << getRunning();
                 Runnable *run = &q_.front();
                 q_.pop_front();
                 run->run();
                 delete run;
             }
-            if (pendings_.empty()) {
-                FUTURES_DLOG(INFO) << "no pending events";
+            if (!getRunning() && (!always_blocks || wait_stop_)) {
+                FUTURES_DLOG(INFO) << "no pending tasks";
                 break;
             }
             if (wait_stop_) {
-                // cleanup
-                FUTURES_DLOG(INFO) << "cleaning up";
-                while (!pendings_.empty()) {
-                    EventWatcherBase &n = pendings_.front();
-                    n.cleanup(CancelReason::ExecutorShutdown);
-                    // no pop here, front node will should be removed by cleanup
-                    assert(&pendings_.front() != &n);
-                }
-            } else {
-                FUTURES_DLOG(INFO) << "START POLL: " << this;
-                getLoop().run(EVRUN_ONCE);
-                FUTURES_DLOG(INFO) << "END POLL: " << this;
+                FUTURES_DLOG(INFO) << "abort registered watchers";
+                while (!pendings_.empty())
+                    pendings_.front().cleanup(CancelReason::ExecutorShutdown);
+                if (!getRunning()) break;
             }
+            FUTURES_DLOG(INFO) << "START POLL: " << this;
+            getLoop().run(EVRUN_ONCE);
+            FUTURES_DLOG(INFO) << "END POLL: " << this;
         }
         signaler_.stop();
         // we may still have some pe
         wait_stop_ = false;
-        FUTURES_DLOG(INFO) << "event loop end: " << this;
+        FUTURES_DLOG(INFO) << "event loop end: " << this
+                    << ", running: " << getRunning();
     }
 
     ev::loop_ref getLoop() {
         return dyn_loop_ ? *dyn_loop_ : ev::get_default_loop();
     }
 
-    // void incPending() { pending_++; }
-    // void decPending() {
-    //     assert(pending_ > 0);
-    //     pending_--;
-    // }
-    void linkWatcher(EventWatcherBase *watcher) {
+    void linkWatcher(EventWatcherBase* watcher) {
         pendings_.push_back(*watcher);
     }
 
-    void unlinkWatcher(EventWatcherBase *watcher) {
+    void unlinkWatcher(EventWatcherBase* watcher) {
         pendings_.erase(EventWatcherBase::EventList::s_iterator_to(*watcher));
     }
 
@@ -118,7 +110,6 @@ public:
     }
 private:
     std::unique_ptr<ev::dynamic_loop> dyn_loop_;
-    // int64_t pending_ = 0;
     EventWatcherBase::EventList pendings_;
     boost::intrusive::list<Runnable> q_;
     boost::intrusive::list<Runnable> foreign_q_;

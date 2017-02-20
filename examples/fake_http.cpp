@@ -86,10 +86,11 @@ private:
 static BoxedFuture<folly::Unit> process(EventExecutor *ev,
     io::SocketChannel::Ptr client,
     std::shared_ptr<DummyService> service) {
-    return makeRpcFuture(
-      io::FramedStream<http::HttpV1Decoder>(client),
-      service,
-      io::FramedSink<http::HttpV1Encoder>(client)
+    using HttpStream = io::FramedStream<http::HttpV1Decoder>;
+    using HttpSink = io::FramedSink<http::HttpV1Encoder>;
+    return makeRpcFuture<HttpStream, HttpSink>(
+      client,
+      service
     ).then([] (Try<folly::Unit> err) {
       if (err.hasException())
         std::cerr << err.exception().what() << std::endl;

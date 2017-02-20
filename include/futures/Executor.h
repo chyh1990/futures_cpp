@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <boost/intrusive/list.hpp>
 #include <futures/detail/ThreadLocalData.h>
@@ -37,11 +38,17 @@ public:
     virtual void execute(std::unique_ptr<Runnable> run) = 0;
     virtual void stop() = 0;
 
+    void addRunning() { running_tasks_++; }
+    void decRunning() { running_tasks_--; }
+    size_t getRunning() { return running_tasks_; }
+
     virtual ~Executor() = default;
     Executor() {}
 private:
     Executor(const Executor&) = delete;
     Executor& operator=(const Executor&) = delete;
+
+    std::atomic_size_t running_tasks_{0};
 };
 
 class CurrentExecutor: public ThreadLocalData<CurrentExecutor, Executor> {

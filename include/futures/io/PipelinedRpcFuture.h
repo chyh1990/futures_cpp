@@ -15,7 +15,7 @@ public:
     virtual void dispatch(Req&& in) = 0;
     virtual void dispatchErr(folly::exception_wrapper err) = 0;
     virtual bool has_in_flight() = 0;
-    virtual Poll<Resp> poll() = 0;
+    virtual Poll<Optional<Resp>> poll() = 0;
     virtual ~IDispatcher() = default;
 };
 
@@ -35,21 +35,23 @@ public:
 
     void dispatchErr(folly::exception_wrapper err) {}
 
-    void cancel() {
-        in_flight_.clear();
-    }
-
     bool has_in_flight() {
         return !in_flight_.empty();
     }
 
-    Poll<Resp> poll() {
+    Poll<Optional<Resp>> poll() {
         if (in_flight_.empty())
-            return Poll<Resp>(not_ready);
+            return Poll<Optional<Resp>>(not_ready);
         auto r = in_flight_.front().poll();
-        if (r.hasException() || r.value().isReady())
+        if (r.hasException()) {
             in_flight_.pop_front();
-        return std::move(r);
+            return Poll<Optional<Resp>>(r.exception());
+        } else if (r->isReady()) {
+            in_flight_.pop_front();
+            return makePollReady(Optional<Resp>(folly::moveFromTry(r)));
+        } else {
+            return Poll<Optional<Resp>>(not_ready);
+        }
     }
 
 private:
@@ -63,6 +65,7 @@ class PipelineClientDispatcher :
     public Service<Req, Resp>,
     public IDispatcher<Resp, Req> {
 public:
+
     BoxedFuture<Resp> operator()(Req req) override {
         Promise<Resp> p;
         in_flight_.push_back(std::move(req));
@@ -73,33 +76,47 @@ public:
     }
 
     void dispatch(Resp&& in) override {
+        if (closed_)
+            throw DispatchException("already closed");
         FUTURES_CHECK (!promise_.empty());
         promise_.front().setValue(std::move(in));
         promise_.pop_front();
     }
 
-    void dispatchErr(folly::exception_wrapper err) {
+    void dispatchErr(folly::exception_wrapper err) override {
         for (auto &e: promise_)
             e.setException(err);
         promise_.clear();
         in_flight_.clear();
+        closed_ = true;
     }
 
-    Poll<Req> poll() override {
+    Poll<Optional<Req>> poll() override {
         if (in_flight_.empty()) {
-            park();
-            return Poll<Req>(not_ready);
+            if (closed_) {
+                return makePollReady(Optional<Req>());
+            } else {
+                park();
+                return Poll<Optional<Req>>(not_ready);
+            }
         }
-        Poll<Req> req(makePollReady(std::move(in_flight_.front())));
+        auto req = makePollReady(Optional<Req>(std::move(in_flight_.front())));
         in_flight_.pop_front();
         return req;
     }
 
-    bool has_in_flight() {
-        return true;
+    bool has_in_flight() override {
+        return !in_flight_.empty();
+    }
+
+    BoxedFuture<folly::Unit> close() override {
+        closed_ = true;
+        notify();
+        return makeOk().boxed();
     }
 
 private:
+    bool closed_ = false;
     std::deque<Req> in_flight_;
     std::deque<Promise<Resp>> promise_;
     Optional<Task> task_;
@@ -162,11 +179,17 @@ public:
             }
             auto v = folly::moveFromTry(r);
             if (v.isReady()) {
-                auto r = sink_.startSend(v.value());
-                if (r.hasException()) {
-                    FUTURES_DLOG(ERROR) << "encode frame error: " << r.exception().what();
-                    dispatcher_->dispatchErr(r.exception());
-                    return Poll<Item>(r.exception());
+                if (v->hasValue()) {
+                    auto r = sink_.startSend(v->value());
+                    if (r.hasException()) {
+                        FUTURES_DLOG(ERROR) << "encode frame error: " << r.exception().what();
+                        dispatcher_->dispatchErr(r.exception());
+                        return Poll<Item>(r.exception());
+                    }
+                } else {
+                    transport_->shutdownWrite();
+                    write_closed_ = true;
+                    FUTURES_DLOG(INFO) << "write side closed";
                 }
             } else {
                 break;
@@ -180,27 +203,33 @@ public:
             return Poll<Item>(r.exception());
         }
 
-        if (!dispatcher_->has_in_flight() && read_closed_)
+        if (!dispatcher_->has_in_flight() && read_closed_) {
+            transport_->shutdownWrite();
             write_closed_ = true;
+        }
 
         if (read_closed_ && write_closed_) {
             FUTURES_DLOG(INFO) << "rpc channel closed";
+            dispatcher_->dispatchErr(IOError("Channel closed"));
             return makePollReady(folly::Unit());
         }
 
         return Poll<Item>(not_ready);
     }
 
-    RpcFuture(ReadStream &&stream,
-            std::shared_ptr<DispatchType> service,
-            WriteSink &&sink
+    RpcFuture(
+            io::Channel::Ptr transport,
+            std::shared_ptr<DispatchType> dispatcher
             )
-        : stream_(std::move(stream)),
-        sink_(std::move(sink)),
-        dispatcher_(service) {
+        :
+        transport_(transport),
+        stream_(transport),
+        sink_(transport),
+        dispatcher_(dispatcher) {
         }
 
 private:
+    io::Channel::Ptr transport_;
     ReadStream stream_;
     WriteSink sink_;
     std::shared_ptr<DispatchType> dispatcher_;
@@ -209,14 +238,13 @@ private:
     bool write_closed_ = false;
 };
 
-template <typename ReadStream, typename Service, typename WriteSink>
+template <typename ReadStream, typename WriteSink, typename Service>
 RpcFuture<ReadStream, WriteSink>
-makeRpcFuture(ReadStream&& stream, std::shared_ptr<Service> service, WriteSink &&sink) {
+makeRpcFuture(io::Channel::Ptr transport, std::shared_ptr<Service> service) {
     using Req = typename ReadStream::Item;
     using Resp = typename WriteSink::Out;
-    return RpcFuture<ReadStream, WriteSink>(std::forward<ReadStream>(stream),
-            std::make_shared<PipelineDispatcher<Req, Resp>>(service),
-            std::forward<WriteSink>(sink));
+    return RpcFuture<ReadStream, WriteSink>(transport,
+            std::make_shared<PipelineDispatcher<Req, Resp>>(service));
 }
 
 }

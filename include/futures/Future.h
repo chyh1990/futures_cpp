@@ -365,6 +365,7 @@ public:
   public:
     Inner(Executor *exec)
       : exec_(exec) {
+      exec_->addRunning();
     }
 
     void unpark() override {
@@ -376,6 +377,7 @@ public:
 
     ~Inner() {
       FUTURES_DLOG(INFO) << "FutureSpawn INNER DESTROY";
+      exec_->decRunning();
     }
 
     Executor *exec_;
