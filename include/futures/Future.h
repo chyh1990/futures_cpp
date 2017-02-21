@@ -82,6 +82,8 @@ public:
     ThenFuture<R, Derived, Wrapper> map(F&& f);
 
     BoxedFuture<T> boxed();
+    /* implicit */ operator BoxedFuture<T>() &&;
+
     SharedFuture<T> shared();
 
     Poll<T> wait();
@@ -461,3 +463,4 @@ LazyFuture<Return, F> makeLazy(F&& f) {
 #include <futures/detail/WhenAllFuture.h>
 #include <futures/detail/LoopFn.h>
 
+#include <futures/detail/SyntaxSugar.h>

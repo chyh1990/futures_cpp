@@ -380,7 +380,7 @@ public:
     return detail::value_before(e_);
   }
   // Works only for Range<const char*> and Range<char*>
-  std::string str() const { return std::string(b_, size()); }
+  std::string str() const { return std::string((const char*)b_, size()); }
   std::string toString() const { return str(); }
   // Works only for Range<const char*> and Range<char*>
 #if 0

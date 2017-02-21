@@ -100,6 +100,17 @@ TEST(Future, Join) {
 	EXPECT_EQ(r.value(), Async<std::string>("13"));
 }
 
+TEST(Future, Join2) {
+	auto f = makeOk(1)
+		.join(makeOk(std::string("3")))
+		>> [] (int a, std::string b) {
+			return makeOk(std::to_string(a) + b);
+		};
+	auto r = f.poll();
+	EXPECT_EQ(r.value(), Async<std::string>("13"));
+}
+
+
 TEST(Future, Select) {
 	auto f1 = makeOk(1);
 	auto f2 = makeOk(2);
@@ -134,7 +145,7 @@ TEST(Executor, CpuExcept) {
 	auto f = exec.spawn_fn([&] () {
 			std::cerr << "Start" << std::endl;
 			throw std::runtime_error("error");
-			return folly::Unit();
+			return Unit();
 	});
 
 	EXPECT_TRUE(f.wait().hasException());
@@ -157,7 +168,7 @@ TEST(Executor, Event) {
 	}).andThen2([] (tcp::Socket s, size_t size) {
 		std::cerr << "sent " << size << std::endl;
 		return makeOk();
-	}).then([] (Try<folly::Unit> u) {
+	}).then([] (Try<Unit> u) {
 		if (u.hasException())
 			std::cerr << u.exception().what() << std::endl;
 		return makeOk();
@@ -173,7 +184,7 @@ TEST(Executor, Event) {
 TEST(Executor, Timer) {
 	EventExecutor ev;
 	auto f = TimerFuture(&ev, 1)
-		.andThen([&ev] (folly::Unit) {
+		.andThen([&ev] (Unit) {
 			std::cerr << "DONE" << std::endl;
 			return makeOk();
 		});
@@ -205,7 +216,7 @@ TEST(Future, AllTimeout) {
 
 	std::vector<BoxedFuture<int>> f;
 	f.emplace_back(TimerFuture(&ev, 1.0)
-		.then([] (Try<folly::Unit> v) {
+		.then([] (Try<Unit> v) {
 			if (v.hasException())
 				std::cerr << "ERROR" << std::endl;
 			else
@@ -213,7 +224,7 @@ TEST(Future, AllTimeout) {
 			return makeOk(1);
 		}).boxed());
 	f.emplace_back(TimerFuture(&ev, 2.0)
-		.then([] (Try<folly::Unit> v) {
+		.then([] (Try<Unit> v) {
 			if (v.hasException())
 				std::cerr << "ERROR" << std::endl;
 			else
@@ -235,7 +246,7 @@ BoxedFuture<std::vector<int>> rwait(EventExecutor &ev, std::vector<int> &v, int 
 		return makeOk(std::move(v)).boxed();
 	return TimerFuture(&ev, 0.1)
 		.andThen(
-			[&ev, &v, n] (folly::Unit) {
+			[&ev, &v, n] (Unit) {
 				v.push_back(n);
 				return rwait(ev, v, n - 1);
 			}).boxed();
@@ -361,10 +372,10 @@ TEST(Future, TimerKeeper) {
 	auto timer = std::make_shared<TimerKeeper>(&ev, 1);
 	auto f = [timer, &ev] (double sec) {
 		return delay(&ev, sec)
-			.andThen([timer] (folly::Unit) {
+			.andThen([timer] (Unit) {
 				return TimerKeeperFuture(timer);
 			})
-			.then([] (Try<folly::Unit> err) {
+			.then([] (Try<Unit> err) {
 				if (err.hasException()) {
 					std::cerr << "ERR: " << err.exception().what() << std::endl;
 				} else {

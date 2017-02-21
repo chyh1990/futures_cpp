@@ -3,6 +3,7 @@
 #include <futures/Timer.h>
 #include <futures/TcpStream.h>
 #include <futures/http/HttpCodec.h>
+#include <futures/http/HttpController.h>
 #include <futures/io/PipelinedRpcFuture.h>
 #include <futures/io/IoStream.h>
 #include <futures/io/AsyncSocket.h>
@@ -19,7 +20,7 @@ public:
         std::cerr << req << std::endl;
         auto c = folly::makeMoveWrapper(std::move(req));
         return delay(EventExecutor::current(), 1.0)
-          .andThen([c] (folly::Unit) mutable {
+          .andThen([c] (Unit) mutable {
               http::Response resp;
               resp.http_errno = 200;
               resp.body.append(std::move(c->body));
@@ -33,6 +34,34 @@ public:
         return makeOk(std::move(resp)).boxed();
 #endif
     }
+};
+
+class SampleService : public http::HttpController {
+public:
+  SampleService() {
+    setup();
+  }
+
+private:
+  void setup() {
+    get("^/test$", [] (http::HttpRequest req) {
+        http::Response resp;
+        resp.http_errno = 200;
+        resp.body.append("Hello", 5);
+        return makeOk(std::move(resp)); // .boxed();
+    });
+
+    post("^/sleep$", [] (http::HttpRequest req) {
+        return
+          delay(EventExecutor::current(), 1.0)
+          >> [] (Unit) {
+              http::Response resp;
+              resp.http_errno = 200;
+              resp.body.append("Done", 4);
+              return makeOk(std::move(resp));
+            };
+    });
+  }
 };
 
 #if 0
@@ -84,9 +113,9 @@ private:
 
 static BoxedFuture<folly::Unit> process(EventExecutor *ev,
     io::SocketChannel::Ptr client,
-    std::shared_ptr<DummyService> service) {
-    using HttpStream = io::FramedStream<http::HttpV1Decoder>;
-    using HttpSink = io::FramedSink<http::HttpV1Encoder>;
+    std::shared_ptr<SampleService> service) {
+    using HttpStream = io::FramedStream<http::HttpV1RequestDecoder>;
+    using HttpSink = io::FramedSink<http::HttpV1ResponseEncoder>;
     return makeRpcFuture<HttpStream, HttpSink>(
       client,
       service
@@ -137,7 +166,7 @@ int main(int argc, char *argv[])
   const int kWorkers = 4;
 
   std::unique_ptr<EventExecutor> worker_loops[kWorkers];
-  auto pservice = std::make_shared<DummyService>();
+  auto pservice = std::make_shared<SampleService>();
   auto pWsservice = std::make_shared<DummyWebsocketService>();
 
   // io::WorkIOObject work_obj[kWorkers];

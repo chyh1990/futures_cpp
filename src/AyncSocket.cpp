@@ -46,7 +46,9 @@ ssize_t SocketChannel::performWrite(
 }
 
 ssize_t SocketChannel::performRead(ReaderCompletionToken *tok, std::error_code &ec) {
-    while (true) {
+    const static size_t kMaxReadPerEvent = 12;
+    size_t reads = 0;
+    while (reads < kMaxReadPerEvent) {
         void *buf;
         size_t bufLen = 0;
         tok->prepareBuffer(&buf, &bufLen);
@@ -66,11 +68,13 @@ ssize_t SocketChannel::performRead(ReaderCompletionToken *tok, std::error_code &
             return read_ret;
         } else {
             tok->dataReady(read_ret);
+            reads++;
             if (read_ret < bufLen) {
                 return read_ret;
             }
         }
     }
+    return READ_WOULDBLOCK;
 }
 
 }

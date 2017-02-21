@@ -353,9 +353,22 @@ template <typename Derived, typename T>
 BoxedFuture<T> FutureBase<Derived, T>::boxed() {
   std::unique_ptr<IFuture<T>> p(new Derived(move_self()));
 #ifdef FUTURES_ENABLE_DEBUG_PRINT
-  FUTURES_DLOG(INFO) << "Future boxed: " << p.get() << typeid(Derived).name()
-     << ", size: " << sizeof(Derived);
+  FUTURES_DLOG(INFO) << "Future boxed (explicit): "
+    << p.get() << typeid(Derived).name()
+    << ", size: " << sizeof(Derived);
 #endif
+  return BoxedFuture<T>(std::move(p));
+}
+
+template <typename Derived, typename T>
+FutureBase<Derived, T>::operator BoxedFuture<T>() && {
+  std::unique_ptr<IFuture<T>> p(new Derived(move_self()));
+#ifdef FUTURES_ENABLE_DEBUG_PRINT
+  FUTURES_DLOG(INFO) << "Future boxed (implicit): "
+    << p.get() << typeid(Derived).name()
+    << ", size: " << sizeof(Derived);
+#endif
+
   return BoxedFuture<T>(std::move(p));
 }
 

@@ -28,7 +28,7 @@ endif()
 SET(ALL_SRC ${ALL_SRC} ${LIBAE_SRC})
 
 CPPBUILD_LIB_TARGET(futures_cpp ${ALL_SRC})
-TARGET_LINK_LIBRARIES(futures_cpp udns)
+TARGET_LINK_LIBRARIES(futures_cpp udns z)
 CPPBUILD_INSTALL_LIB(futures_cpp)
 
 if (CPPBUILD_IS_TOPLEVEL)

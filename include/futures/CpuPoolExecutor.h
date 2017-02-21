@@ -41,15 +41,15 @@ private:
 };
 
 template <typename Fut>
-class CpuSenderFuture : public FutureBase<CpuSenderFuture<Fut>, folly::Unit> {
+class CpuSenderFuture : public FutureBase<CpuSenderFuture<Fut>, Unit> {
 public:
-    typedef folly::Unit Item;
+    typedef Unit Item;
     typedef typename isFuture<Fut>::Inner Data;
     CpuSenderFuture(Fut fut, channel::OneshotChannelSender<Try<Data>> sender)
         : fut_(std::move(fut)), sender_(std::move(sender)) {
     }
 
-    Poll<folly::Unit> poll() {
+    Poll<Unit> poll() {
         auto r = fut_.poll();
         if (r.hasException()) {
             sender_.send(Try<Data>(r.exception()));
@@ -58,10 +58,10 @@ public:
             if (v.isReady()) {
                 sender_.send(Try<Data>(std::move(v).value()));
             } else {
-                return Poll<folly::Unit>(Async<folly::Unit>());
+                return Poll<Unit>(Async<Unit>());
             }
         }
-        return Poll<folly::Unit>(Async<folly::Unit>(folly::Unit()));
+        return Poll<Unit>(Async<Unit>(Unit()));
     }
 
 private:
@@ -103,7 +103,7 @@ public:
         CpuSenderFuture<Fut> sender(std::move(fut), std::move(ch.first));
 
         execute(folly::make_unique<FutureSpawnRun>(this,
-                    FutureSpawn<BoxedFuture<folly::Unit>>(sender.boxed())));
+                    FutureSpawn<BoxedFuture<Unit>>(sender.boxed())));
         return CpuReceiveFuture<R>(std::move(ch.second));
     }
 

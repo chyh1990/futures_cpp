@@ -41,6 +41,7 @@ public:
         if (s_ == WAITING) {
             timer_.stop();
             getExecutor()->unlinkWatcher(this);
+            s_ = CANCELLED;
         }
         notify();
     }

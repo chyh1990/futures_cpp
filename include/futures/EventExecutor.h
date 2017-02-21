@@ -50,7 +50,7 @@ public:
     template <typename Fut>
     void spawn(Fut&& fut) {
         auto ptr = folly::make_unique<FutureSpawnRun>(this,
-                    FutureSpawn<BoxedFuture<folly::Unit>>(fut.boxed()));
+                    FutureSpawn<BoxedFuture<Unit>>(fut.boxed()));
         execute(std::move(ptr));
     }
 

@@ -10,16 +10,18 @@ namespace http {
 
 struct Parser;
 
-struct Request {
+struct HttpFrame {
     unsigned int err;
+    unsigned int http_errno;
     unsigned int method;
     uint64_t content_length;
-    std::string url;
+    std::string path;
     std::unordered_map<std::string, std::string> headers;
 
     folly::IOBufQueue body;
 
-    Request() {
+    HttpFrame()
+        : body(folly::IOBufQueue::cacheChainLength()) {
         reset();
     }
 
@@ -27,43 +29,66 @@ struct Request {
         err = 0;
         method = 0;
         content_length = 0;
+        http_errno = 0;
         headers.clear();
-        url.clear();
+        path.clear();
         body.clear();
     }
 
-    friend std::ostream& operator<< (std::ostream& stream, const Request& matrix);
+    friend std::ostream& operator<< (std::ostream& stream, const HttpFrame& frame);
 };
 
-std::ostream& operator<< (std::ostream& stream, const Request& o);
+class Request : public HttpFrame {
+public:
+    Request(HttpFrame &&f)
+        : HttpFrame(std::move(f)) {}
 
-struct Response {
-    unsigned int http_errno;
-    std::unordered_map<std::string, std::string> headers;
-    folly::IOBufQueue body;
-
-    Response()
-      : http_errno(200),
-        body(folly::IOBufQueue::cacheChainLength())
-    {}
+    Request() {}
 };
 
-class HttpV1Decoder: public codec::DecoderBase<HttpV1Decoder, Request> {
+class Response : public HttpFrame {
+public:
+    Response() {}
+    Response(HttpFrame &&f)
+        : HttpFrame(std::move(f)) {}
+};
+
+std::ostream& operator<< (std::ostream& stream, const HttpFrame& o);
+
+class HttpV1RequestDecoder: public codec::DecoderBase<HttpV1RequestDecoder, Request> {
 public:
     using Out = Request;
 
-    HttpV1Decoder();
-    ~HttpV1Decoder();
+    HttpV1RequestDecoder();
+    ~HttpV1RequestDecoder();
 
     Try<Optional<Out>> decode(folly::IOBufQueue &buf);
 
-    HttpV1Decoder(HttpV1Decoder&&);
-    HttpV1Decoder& operator=(HttpV1Decoder&&);
+    HttpV1RequestDecoder(HttpV1RequestDecoder&&);
+    HttpV1RequestDecoder& operator=(HttpV1RequestDecoder&&);
 private:
     std::unique_ptr<Parser> impl_;
 };
 
-class HttpV1Encoder: public codec::EncoderBase<HttpV1Encoder, Response> {
+class HttpV1ResponseDecoder:
+    public codec::DecoderBase<HttpV1ResponseDecoder, Response> {
+public:
+    using Out = Response;
+
+    HttpV1ResponseDecoder();
+    ~HttpV1ResponseDecoder();
+
+    Try<Optional<Out>> decode(folly::IOBufQueue &buf);
+
+    HttpV1ResponseDecoder(HttpV1ResponseDecoder&&);
+    HttpV1ResponseDecoder& operator=(HttpV1ResponseDecoder&&);
+private:
+    std::unique_ptr<Parser> impl_;
+};
+
+
+class HttpV1ResponseEncoder:
+    public codec::EncoderBase<HttpV1ResponseEncoder, Response> {
 public:
     using Out = Response;
 
@@ -71,6 +96,17 @@ public:
             folly::IOBufQueue &buf);
 
 };
+
+class HttpV1RequestEncoder:
+    public codec::EncoderBase<HttpV1RequestEncoder, Request> {
+public:
+    using Out = Request;
+
+    Try<void> encode(Out&& out,
+            folly::IOBufQueue &buf);
+
+};
+
 
 }
 
@@ -88,34 +124,31 @@ public:
     DataFrame(type_t type)
         : type_(type) {}
 
-    DataFrame(http::Request&& req)
-        : type_(HANDSHAKE), handshake_(std::move(req)) {}
-    DataFrame(http::Response&& r)
-        : type_(HANDSHAKE_RESPONSE), handshake_response_(std::move(r)) {}
+    DataFrame(type_t type, http::HttpFrame&& req)
+        : type_(type), handshake_(std::move(req)) {}
 
     type_t getType() const { return type_; }
 
-    const http::Request* getHandshake() const {
+    const http::HttpFrame* getHandshake() const {
         return handshake_.get_pointer();
     }
 
-    http::Request* getHandshake() {
+    http::HttpFrame* getHandshake() {
         return handshake_.get_pointer();
     }
 
-    const http::Response* getHandshakeResponse() const {
-        return handshake_response_.get_pointer();
+    const http::HttpFrame* getHandshakeResponse() const {
+        return handshake_.get_pointer();
     }
 
-    http::Response* getHandshakeResponse() {
-        return handshake_response_.get_pointer();
+    http::HttpFrame* getHandshakeResponse() {
+        return handshake_.get_pointer();
     }
 
-    static DataFrame buildHandshakeResponse(const http::Request& req);
+    static DataFrame buildHandshakeResponse(const http::HttpFrame& req);
 private:
     type_t type_;
-    Optional<http::Request> handshake_;
-    Optional<http::Response> handshake_response_;
+    Optional<http::HttpFrame> handshake_;
 };
 
 class RFC6455Decoder : public codec::DecoderBase<RFC6455Decoder, DataFrame> {
@@ -149,7 +182,7 @@ public:
             folly::IOBufQueue &buf);
 
 private:
-    http::HttpV1Encoder http_encoder_;
+    http::HttpV1ResponseEncoder http_encoder_;
 };
 
 }
