@@ -35,6 +35,10 @@ struct HttpFrame {
         body.clear();
     }
 
+    bool hasContentLength() const {
+        return content_length < INT64_MAX;
+    }
+
     friend std::ostream& operator<< (std::ostream& stream, const HttpFrame& frame);
 };
 

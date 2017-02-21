@@ -14,10 +14,16 @@ class BasicIOBufStreambuf : public std::basic_streambuf<CharT> {
         using int_type = typename Base::int_type;
 
         BasicIOBufStreambuf(folly::IOBufQueue *q)
-            : q_(q) {
+            : q_(q), cur_(q->front()) {
                 assert(q);
-                char *p = static_cast<char*>(q_->writableTail());
+                CharT *p = static_cast<CharT*>(q_->writableTail());
                 Base::setp(p, p + q_->tailroom());
+                if (!cur_) {
+                    Base::setg(nullptr, nullptr, nullptr);
+                } else {
+                    Base::setg((CharT*)cur_->data(), (CharT*)cur_->data(),
+                            (CharT*)cur_->tail());
+                }
             }
 
     private:
@@ -28,7 +34,7 @@ class BasicIOBufStreambuf : public std::basic_streambuf<CharT> {
                 return ch;
             }
             auto p = q_->preallocate(2000, 4000);
-            char *pc = static_cast<char*>(p.first);
+            CharT *pc = static_cast<CharT*>(p.first);
             Base::setp(pc, pc + p.second);
             *Base::pptr() = ch;
             Base::pbump(1);
@@ -40,11 +46,28 @@ class BasicIOBufStreambuf : public std::basic_streambuf<CharT> {
             if (n > 0) {
                 // FUTURES_DLOG(INFO) << "FLUSHED " << n;
                 q_->postallocate(n);
+                CharT *p = static_cast<CharT*>(q_->writableTail());
+                Base::setp(p, p + q_->tailroom());
             }
             return 0;
         }
 
+        int_type underflow() override {
+            if (Base::gptr() < Base::egptr())
+                return std::char_traits<CharT>::to_int_type(*Base::gptr());
+            if (!cur_)
+                return std::char_traits<CharT>::eof();
+            auto next = cur_->next();
+            if (next == q_->front())
+                return std::char_traits<CharT>::eof();
+            cur_ = next;
+            Base::setg((CharT*)cur_->data(), (CharT*)cur_->data(),
+                    (CharT*)cur_->tail());
+            return std::char_traits<CharT>::to_int_type(*Base::gptr());
+        }
+
         folly::IOBufQueue *q_;
+        const folly::IOBuf *cur_;
 };
 
 using IOBufStreambuf = BasicIOBufStreambuf<char>;

@@ -70,7 +70,15 @@ public:
     HttpRequest r(std::move(req));
     auto func = findResource(&r);
     FUTURES_CHECK(func) << "must not be empty";
-    return func(std::move(r));
+    try {
+      return func(std::move(r));
+    } catch (std::exception &err) {
+      FUTURES_LOG(ERROR) << "service error: " << err.what();
+      Response resp;
+      resp.http_errno = 500;
+      resp.body.append("<h1>Internal Error</h1>", 23);
+      return makeOk(std::move(resp));
+    }
   }
 protected:
   static BoxedFuture<Response> defaultHandler(HttpRequest req) {
