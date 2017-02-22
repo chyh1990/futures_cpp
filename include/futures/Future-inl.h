@@ -218,6 +218,23 @@ struct MapWrapper {
   F func_;
 };
 
+template <typename T, typename OtherT>
+struct CastWrapper {
+  static_assert(std::is_convertible<T, OtherT>::value,
+      "not convertiable");
+  using Return = OtherT;
+
+  CastWrapper() {}
+
+  ResultFuture<Return> operator()(Try<T> v) {
+    if (v.hasException())
+      return ResultFuture<Return>(Try<Return>(v.exception()));
+    return ResultFuture<Return>(Try<Return>(folly::moveFromTry(v)));
+  }
+
+};
+
+
 template <typename T>
 class SharedFuture : public FutureBase<SharedFuture<T>, T> {
 public:
@@ -335,6 +352,12 @@ template <typename Derived, typename T>
 template <typename F, typename Wrapper, typename R>
 ThenFuture<R, Derived, Wrapper> FutureBase<Derived, T>::map(F &&f) {
   return ThenFuture<R, Derived, Wrapper>(move_self(), Wrapper(std::forward<F>(f)));
+}
+
+template <typename Derived, typename T>
+template <typename OtherT, typename Wrapper>
+ThenFuture<OtherT, Derived, Wrapper> FutureBase<Derived, T>::cast() {
+  return ThenFuture<OtherT, Derived, Wrapper>(move_self(), Wrapper());
 }
 
 template <typename Derived, typename T>

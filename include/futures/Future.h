@@ -38,6 +38,8 @@ template <typename T, typename F>
 struct ErrorWrapper;
 template <typename T, typename F>
 struct MapWrapper;
+template <typename T, typename OtherT>
+struct CastWrapper;
 template <typename T, typename F>
 struct OrElseWrapper;
 
@@ -80,6 +82,9 @@ public:
     template <typename F, typename Wrapper = MapWrapper<T, F>,
               typename R = typename detail::resultOf<F, T>>
     ThenFuture<R, Derived, Wrapper> map(F&& f);
+
+    template <typename OtherT, typename Wrapper = CastWrapper<T, OtherT>>
+    ThenFuture<OtherT, Derived, Wrapper> cast();
 
     BoxedFuture<T> boxed();
     /* implicit */ operator BoxedFuture<T>() &&;

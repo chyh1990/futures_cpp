@@ -36,11 +36,14 @@ static BoxedFuture<io::SocketChannel::Ptr> connect(
 {
     if (ssl) {
         return io::SSLSocketChannel::connect(ev, ctx, addr)
+            .cast<io::SocketChannel::Ptr>();
+#if 0
             | [] (io::SSLSocketChannel::Ptr sock) {
                 sock->printPeerCert();
                 io::SocketChannel::Ptr ptr = sock;
                 return ptr;
             };
+#endif
     } else {
         return io::SocketChannel::connect(ev, addr);
     }
@@ -87,7 +90,7 @@ static BoxedFuture<folly::Unit> fetch(EventExecutor *ev, io::SSLContext *ctx, co
                             auto codec = folly::io::getCodec(folly::io::CodecType::GZIP);
                             FUTURES_LOG(INFO) << "size: " << req->body.front()->length();
                             auto out = codec->uncompress(req->body.front());
-                            FUTURES_LOG(INFO) << "XX " << out->computeChainDataLength();
+                            FUTURES_LOG(INFO) << "uncompressed size: " << out->computeChainDataLength();
                             auto r = out->coalesce();
                             body = r.toString();
                         } else {
