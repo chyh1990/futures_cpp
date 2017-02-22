@@ -78,7 +78,10 @@ struct Parser {
         assert(self->cur_buf_->tail() >= (const uint8_t*)(at + length));
 
         auto buf = self->cur_buf_->clone();
-        buf->trimStart((const uint8_t*)at - self->cur_buf_->data());
+        size_t trim_start = (const uint8_t*)at - self->cur_buf_->data();
+        size_t trim_end = self->cur_buf_->tail() - (const uint8_t*)(at + length);
+        buf->trimStart(trim_start);
+        buf->trimEnd(trim_end);
         self->req_.body.append(std::move(buf));
         return 0;
     }

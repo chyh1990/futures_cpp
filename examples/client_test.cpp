@@ -90,8 +90,8 @@ int main(int argc, char *argv[])
             http::Request req;
             req.path = "/";
             req.method = HTTP_GET;
-            req.headers["Accept"] = "*/*";
             req.headers["Host"] = host;
+            req.headers["Accept"] = "text/html; charset=UTF-8";
             return (*client)(std::move(req))
                 .then([client] (Try<http::Response> req) {
                     if (req.hasException()) {
@@ -112,7 +112,9 @@ int main(int argc, char *argv[])
                         } else {
                             body = "<UNSUPPORTED Content-Encoding>";
                         }
-                        std::cerr << body;
+                        std::cerr << "========" << std::endl;
+                        std::cout << body << std::endl;
+                        std::cerr << "========" << std::endl;
                     }
                     return makeOk();
                 })
