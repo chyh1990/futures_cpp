@@ -293,42 +293,12 @@ int SSLSocketChannel::eorAwareSSLWrite(SSL *ssl, const void *buf, int n,
   return n;
 }
 
-ssize_t SSLSocketChannel::performRead(ReaderCompletionToken *tok, std::error_code &ec)
+ssize_t SSLSocketChannel::performRead(void *buf, size_t bufLen, std::error_code &ec)
 {
   if (ssl_state_ == STATE_UNENCRYPTED) {
-    return SocketChannel::performRead(tok, ec);
+    return SocketChannel::performRead(buf, bufLen, ec);
   }
-  while (true) {
-    void *buf;
-    size_t bufLen = 0;
-    tok->prepareBuffer(&buf, &bufLen);
 
-    assert(buf);
-    assert(bufLen > 0);
-
-    ssize_t read_ret = realPerformRead(buf, bufLen, ec);
-
-    // FUTURES_DLOG(INFO) << "XXXXXXXX: " << read_ret;
-    if (read_ret == READ_ERROR) {
-      // TODO error handling
-      ec = std::make_error_code(std::errc::connection_reset);
-      tok->readError(ec);
-      return read_ret;
-    } else if (read_ret == READ_WOULDBLOCK) {
-      tok->dataReady(0);
-      return read_ret;
-    } else if (read_ret == READ_EOF) {
-      FUTURES_DLOG(INFO) << "Socket EOF";
-      tok->readEof();
-      return read_ret;
-    } else {
-      tok->dataReady(read_ret);
-      continue;
-    }
-  }
-}
-
-ssize_t SSLSocketChannel::realPerformRead(void *buf, size_t bufLen, std::error_code &ec) {
   ssize_t bytes = 0;
   bytes = SSL_read(ssl_, buf, bufLen);
 
@@ -339,6 +309,7 @@ ssize_t SSLSocketChannel::realPerformRead(void *buf, size_t bufLen, std::error_c
       if (errno == EWOULDBLOCK || errno == EAGAIN) {
         return READ_WOULDBLOCK;
       } else {
+        ec = std::make_error_code(std::errc::io_error);
         return READ_ERROR;
       }
     } else if (error == SSL_ERROR_WANT_WRITE) {
@@ -348,6 +319,7 @@ ssize_t SSLSocketChannel::realPerformRead(void *buf, size_t bufLen, std::error_c
       FUTURES_LOG(ERROR) << "AsyncSSLSocket(fd=" << socket_.fd() << ", state=" << int(s_)
                  << ", sslState=" << ssl_state_
                  << "): unsupported SSL renegotiation during read";
+      ec = std::make_error_code(std::errc::not_supported);
       return READ_ERROR;
     } else {
       if (zero_return(error, bytes)) {
@@ -362,6 +334,7 @@ ssize_t SSLSocketChannel::realPerformRead(void *buf, size_t bufLen, std::error_c
               << "errno: " << errno << ", "
               << "func: " << ERR_func_error_string(errError) << ", "
               << "reason: " << ERR_reason_error_string(errError);
+      ec = std::make_error_code(std::errc::io_error);
       return READ_ERROR;
     }
   } else {
@@ -378,6 +351,11 @@ void SSLSocketChannel::printPeerCert() {
   }
 }
 
+
+SSLSockConnectFuture
+SSLSocketChannel::connect(EventExecutor *ev, SSLContext *ctx, const folly::SocketAddress &addr) {
+  return SSLSockConnectFuture(ev, ctx, addr);
+}
 
 }
 }

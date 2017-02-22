@@ -45,7 +45,18 @@ ssize_t SocketChannel::performWrite(
     return totalWritten;
 }
 
-ssize_t SocketChannel::performRead(ReaderCompletionToken *tok, std::error_code &ec) {
+ssize_t SocketChannel::performRead(void* buf, size_t buflen, std::error_code &ec) {
+    ssize_t r = socket_.recv(buf, buflen, 0, ec);
+    if (!ec) {
+        return r == 0 ? READ_EOF : r;
+    } else if (ec == std::make_error_code(std::errc::operation_would_block)) {
+        return READ_WOULDBLOCK;
+    } else {
+        return READ_ERROR;
+    }
+}
+
+ssize_t SocketChannel::handleRead(ReaderCompletionToken *tok, std::error_code &ec) {
     const static size_t kMaxReadPerEvent = 12;
     size_t reads = 0;
     while (reads < kMaxReadPerEvent) {
@@ -54,7 +65,7 @@ ssize_t SocketChannel::performRead(ReaderCompletionToken *tok, std::error_code &
         tok->prepareBuffer(&buf, &bufLen);
         assert(buf);
         assert(bufLen > 0);
-        ssize_t read_ret = doAsyncRead(buf, bufLen, ec);
+        ssize_t read_ret = performRead(buf, bufLen, ec);
         FUTURES_DLOG(INFO) << "readed: " << read_ret;
         if (read_ret == READ_ERROR) {
             tok->readError(ec);
@@ -99,7 +110,7 @@ void SocketChannel::onEvent(ev::io& watcher, int revent) {
             if (!reader.empty()) {
                 auto first = static_cast<ReaderCompletionToken*>(&reader.front());
                 std::error_code ec;
-                ssize_t ret = performRead(first, ec);
+                ssize_t ret = handleRead(first, ec);
                 if (ret == READ_EOF) {
                     // todo
                     closeRead();
@@ -175,6 +186,21 @@ void SocketChannel::onEvent(ev::io& watcher, int revent) {
 
 }
 
+// future API
+SockConnectFuture
+SocketChannel::connect(EventExecutor *ev, const folly::SocketAddress &addr) {
+    return SockConnectFuture(ev, addr);
+}
+
+SockWriteFuture
+SocketChannel::write(std::unique_ptr<folly::IOBuf> buf) {
+    return SockWriteFuture(shared_from_this(), std::move(buf));
+}
+
+SockReadStream
+SocketChannel::readStream() {
+    return SockReadStream(shared_from_this());
+}
 
 }
 }

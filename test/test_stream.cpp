@@ -218,15 +218,14 @@ TEST(Stream, Channel) {
 
 TEST(IO, NewSocket) {
     EventExecutor ev;
-    auto p = std::make_shared<io::SocketChannel>(&ev);
 
-    auto f = io::ConnectFuture(p, folly::SocketAddress("127.0.0.1", 8011))
-        .andThen([p] (folly::Unit) {
-            return io::SockReadStream(p)
-            .forEach([p] (std::unique_ptr<folly::IOBuf> buf) {
+    auto f = io::SocketChannel::connect(&ev, folly::SocketAddress("127.0.0.1", 8011))
+        .andThen([] (io::SocketChannel::Ptr sock) {
+            return sock->readStream()
+            .forEach([sock] (std::unique_ptr<folly::IOBuf> buf) {
                     std::cerr << "READ: " << buf->computeChainDataLength() << std::endl;
                     EventExecutor::current()->spawn(
-                            io::SockWriteFuture(p, std::move(buf))
+                            sock->write(std::move(buf))
                                 .error([] (folly::exception_wrapper w) {
                                     std::cerr << "ERR: " << w.what() << std::endl;
                                 })

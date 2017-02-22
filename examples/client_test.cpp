@@ -1,11 +1,9 @@
 #include <futures/EventExecutor.h>
 #include <futures/Signal.h>
-#include <futures/Timer.h>
+#include <futures/Timeout.h>
 #include <futures/io/AsyncSocket.h>
 #include <futures/io/AsyncSSLSocket.h>
 #include <futures/io/PipelinedRpcFuture.h>
-#include <futures/codec/LineBasedDecoder.h>
-#include <futures/codec/StringEncoder.h>
 #include <futures/http/HttpCodec.h>
 #include <futures/core/Compression.h>
 #include <futures/http/http_parser.h>
@@ -37,50 +35,33 @@ static BoxedFuture<io::SocketChannel::Ptr> connect(
         EventExecutor *ev, io::SSLContext *ctx, const folly::SocketAddress &addr, bool ssl)
 {
     if (ssl) {
-        auto sock = std::make_shared<io::SSLSocketChannel>(ev, ctx);
-        return io::ConnectFuture(sock, addr)
-            >> [sock] (Unit) {
-                return io::HandshakeFuture(sock);
-            }
-            | [sock] (Unit) {
+        return io::SSLSocketChannel::connect(ev, ctx, addr)
+            | [] (io::SSLSocketChannel::Ptr sock) {
+                sock->printPeerCert();
                 io::SocketChannel::Ptr ptr = sock;
                 return ptr;
             };
     } else {
-        auto sock = std::make_shared<io::SocketChannel>(ev);
-        return io::ConnectFuture(sock, addr)
-            | [sock] (Unit) {
-                return sock;
-            };
+        return io::SocketChannel::connect(ev, addr);
     }
 }
 
-int main(int argc, char *argv[])
-{
-
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " url" << std::endl;
-        return 1;
-    }
-
+static BoxedFuture<folly::Unit> fetch(EventExecutor *ev, io::SSLContext *ctx, const char *s) {
     http_parser_url url;
     http_parser_url_init(&url);
-    int ret = http_parser_parse_url(argv[1], strlen(argv[1]), false, &url);
-    FUTURES_CHECK(ret == 0) << " invalid url: " << argv[1] << " " << ret;
+    int ret = http_parser_parse_url(s, strlen(s), false, &url);
+    FUTURES_CHECK(ret == 0) << " invalid url: " << s << " " << ret;
 
-    std::string host = getField(argv[1], url, UF_HOST);
-    std::string path = getField(argv[1], url, UF_PATH);
-    bool is_https = getField(argv[1], url, UF_SCHEMA) == "https";
+    std::string host = getField(s, url, UF_HOST);
+    std::string path = getField(s, url, UF_PATH);
+    bool is_https = getField(s, url, UF_SCHEMA) == "https";
     int port = url.port ? url.port : (is_https ? 443 : 80);
     // int port = std::stoi(getField(argv[1], url, UF_PORT));
 
-    EventExecutor loop(true);
     folly::SocketAddress addr(host.c_str(), port, true);
-    io::SocketChannel::Ptr sock;
-    io::SSLContext ctx;
 
-    auto f = connect(&loop, &ctx, addr, is_https)
-        .andThen([host] (io::SocketChannel::Ptr sock) {
+    return connect(ev, ctx, addr, is_https)
+        >> [host] (io::SocketChannel::Ptr sock) {
             FUTURES_LOG(INFO) << "connected";
             auto client = std::make_shared<PipelineClientDispatcher<http::Request,
                 http::Response>>();
@@ -91,7 +72,7 @@ int main(int argc, char *argv[])
             req.path = "/";
             req.method = HTTP_GET;
             req.headers["Host"] = host;
-            req.headers["Accept"] = "text/html; charset=UTF-8";
+            req.headers["Accept"] = "*/*";
             return (*client)(std::move(req))
                 .then([client] (Try<http::Response> req) {
                     if (req.hasException()) {
@@ -123,8 +104,23 @@ int main(int argc, char *argv[])
                         FUTURES_LOG(ERROR) << err.exception().what();
                     return client->close();
                 });
-        }).error([] (folly::exception_wrapper w) {
-            std::cerr << "OUT: " << w.what() << std::endl;
+        };
+}
+
+int main(int argc, char *argv[])
+{
+
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " url" << std::endl;
+        return 1;
+    }
+
+    EventExecutor loop(true);
+    io::SSLContext ctx;
+
+    auto f = timeout(&loop, fetch(&loop, &ctx, argv[1]), 5.0)
+        .error([] (folly::exception_wrapper err) {
+            FUTURES_LOG(ERROR) << err.what();
         });
 #if 0
     auto sig = signal(&loop, SIGINT)

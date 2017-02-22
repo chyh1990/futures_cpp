@@ -8,9 +8,7 @@ typedef struct ssl_st SSL;
 namespace futures {
 namespace io {
 
-namespace detail {
-
-}
+class SSLSockConnectFuture;
 
 class SSLSocketChannel : public SocketChannel {
 public:
@@ -22,6 +20,9 @@ public:
 
     io::intrusive_ptr<ConnectCompletionToken> doHandshake();
     void printPeerCert();
+
+    static SSLSockConnectFuture
+        connect(EventExecutor *ev, SSLContext *ctx, const folly::SocketAddress &addr);
 private:
     enum SSLState {
         STATE_UNINIT,
@@ -47,29 +48,66 @@ private:
             size_t* partialWritten,
             std::error_code &ec) override;
 
-    ssize_t performRead(ReaderCompletionToken *tok, std::error_code &ec) override;
-    ssize_t realPerformRead(void *buf, size_t bufLen, std::error_code &ec);
+    ssize_t performRead(void *buf, size_t bufLen, std::error_code &ec) override;
 
     int eorAwareSSLWrite(SSL *ssl, const void *buf, int n, bool eor);
     std::error_code interpretSSLError(int rc, int error);
 
 };
 
-class HandshakeFuture : public FutureBase<HandshakeFuture, folly::Unit> {
+class SSLSockConnectFuture : public FutureBase<SSLSockConnectFuture, SSLSocketChannel::Ptr> {
 public:
-    using Item = folly::Unit;
+    using Item = SSLSocketChannel::Ptr;
 
-    HandshakeFuture(SSLSocketChannel::Ptr ptr)
-        : ptr_(ptr) {}
+    SSLSockConnectFuture(EventExecutor *ev, SSLContext *ctx, const folly::SocketAddress &addr)
+        : ptr_(std::make_shared<SSLSocketChannel>(ev, ctx)), addr_(addr) {
+    }
 
     Poll<Item> poll() override {
-        if (!tok_)
-            tok_ = ptr_->doHandshake();
-        return tok_->poll();
+    again:
+        switch (s_) {
+            case INIT:
+                conn_tok_ = ptr_->doConnect(addr_);
+                s_ = CONN;
+                goto again;
+            case CONN: {
+                auto r = conn_tok_->poll();
+                if (r.hasException())
+                    return Poll<Item>(r.exception());
+                if (r->isReady()) {
+                    conn_tok_ = ptr_->doHandshake();
+                    s_ = HANDSHAKE;
+                    goto again;
+                } else {
+                    return Poll<Item>(not_ready);
+                }
+            }
+            case HANDSHAKE: {
+                auto r = conn_tok_->poll();
+                if (r.hasException())
+                    return Poll<Item>(r.exception());
+                if (r->isReady()) {
+                    s_ = DONE;
+                    return makePollReady(std::move(ptr_));
+                } else {
+                    return Poll<Item>(not_ready);
+                }
+            }
+            default:
+                throw InvalidPollStateException();
+        }
     }
 private:
+    enum State {
+        INIT,
+        CONN,
+        HANDSHAKE,
+        DONE,
+    };
+    State s_ = INIT;
     SSLSocketChannel::Ptr ptr_;
-    io::intrusive_ptr<SocketChannel::ConnectCompletionToken> tok_;
+    folly::SocketAddress addr_;
+    io::intrusive_ptr<SocketChannel::ConnectCompletionToken> conn_tok_;
 };
 
 

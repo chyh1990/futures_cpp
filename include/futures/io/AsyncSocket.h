@@ -8,7 +8,12 @@
 namespace futures {
 namespace io {
 
-class SocketChannel : public Channel {
+class SockConnectFuture;
+class SockWriteFuture;
+class SockReadStream;
+
+class SocketChannel : public Channel,
+    public std::enable_shared_from_this<SocketChannel> {
 protected:
     enum State {
         INITED,
@@ -177,6 +182,11 @@ public:
         }
     }
 
+    // future API
+    static SockConnectFuture connect(EventExecutor *ev, const folly::SocketAddress &addr);
+    SockWriteFuture write(std::unique_ptr<folly::IOBuf> buf);
+    SockReadStream readStream();
+
 protected:
     tcp::Socket socket_;
     folly::SocketAddress peer_addr_;
@@ -185,17 +195,6 @@ protected:
     ev::io rio_;
     ev::io wio_;
 
-    ssize_t doAsyncRead(void* buf, size_t buflen, std::error_code &ec) {
-        ssize_t r = socket_.recv(buf, buflen, 0, ec);
-        if (!ec) {
-            return r == 0 ? READ_EOF : r;
-        } else if (ec == std::make_error_code(std::errc::operation_would_block)) {
-            return READ_WOULDBLOCK;
-        } else {
-            return READ_ERROR;
-        }
-    }
-
     virtual ssize_t performWrite(
             const iovec* vec,
             size_t count,
@@ -203,7 +202,8 @@ protected:
             size_t* partialWritten,
             std::error_code &ec);
 
-    virtual ssize_t performRead(ReaderCompletionToken *tok, std::error_code &ec);
+    ssize_t handleRead(ReaderCompletionToken *tok, std::error_code &ec);
+    virtual ssize_t performRead(void *buf, size_t bufLen, std::error_code &ec);
 
     void onEvent(ev::io& watcher, int revent);
 
@@ -232,107 +232,8 @@ protected:
     void handleInitialReadWrite();
 };
 
-class ConnectFuture : public FutureBase<ConnectFuture, folly::Unit> {
-public:
-    using Item = folly::Unit;
-
-    ConnectFuture(SocketChannel::Ptr ptr, const folly::SocketAddress &addr)
-        : ptr_(ptr), addr_(addr) {}
-
-    Poll<Item> poll() override {
-        if (!tok_)
-            tok_ = ptr_->doConnect(addr_);
-        return tok_->poll();
-    }
-private:
-    SocketChannel::Ptr ptr_;
-    folly::SocketAddress addr_;
-    io::intrusive_ptr<SocketChannel::ConnectCompletionToken> tok_;
-};
-
-class SockWriteFuture : public FutureBase<SockWriteFuture, ssize_t> {
-public:
-    using Item = ssize_t;
-
-    SockWriteFuture(SocketChannel::Ptr ptr, std::unique_ptr<folly::IOBuf> buf)
-        : ptr_(ptr), buf_(std::move(buf)) {}
-
-    Poll<Item> poll() override {
-        if (!tok_)
-            tok_ = ptr_->doWrite(folly::make_unique<WriterCompletionToken>(std::move(buf_)));
-        return tok_->poll();
-    }
-private:
-    SocketChannel::Ptr ptr_;
-    std::unique_ptr<folly::IOBuf> buf_;
-    io::intrusive_ptr<WriterCompletionToken> tok_;
-};
-
-class SockReadStream : public StreamBase<SockReadStream, std::unique_ptr<folly::IOBuf>> {
-public:
-    using Item = std::unique_ptr<folly::IOBuf>;
-
-    struct StreamCompletionToken : public ReaderCompletionToken {
-    public:
-        StreamCompletionToken() {}
-
-        Poll<Optional<Item>> pollStream() {
-            switch (getState()) {
-            case STARTED:
-                if (!buf_ || buf_->empty()) {
-                    park();
-                    return Poll<Optional<Item>>(not_ready);
-                } else {
-                    return makePollReady(Optional<Item>(std::move(buf_)));
-                }
-            case DONE:
-                if (buf_ && !buf_->empty()) {
-                    return makePollReady(Optional<Item>(std::move(buf_)));
-                }
-                if (getErrorCode()) {
-                    return Poll<Optional<Item>>(IOError("recv", getErrorCode()));
-                } else {
-                    return makePollReady(Optional<Item>());
-                }
-            case CANCELLED:
-                return Poll<Optional<Item>>(FutureCancelledException());
-            }
-        }
-
-        void prepareBuffer(void **buf, size_t *bufLen) override {
-            if (!buf_) buf_ = folly::IOBuf::create(2048);
-            auto last = buf_->prev();
-            assert(last);
-            if (last->tailroom() == 0) {
-                last->appendChain(folly::IOBuf::create(2048));
-                last = last->next();
-            }
-            *buf = last->writableTail();
-            *bufLen = last->tailroom();
-        }
-
-        void dataReady(ssize_t size) override {
-            buf_->prev()->append(size);
-            notify();
-        }
-    private:
-        std::unique_ptr<folly::IOBuf> buf_;
-    };
-
-    SockReadStream(SocketChannel::Ptr ptr)
-        : ptr_(ptr) {}
-
-    Poll<Optional<Item>> poll() override {
-        if (!tok_)
-            tok_ = ptr_->doRead(folly::make_unique<StreamCompletionToken>());
-        return static_cast<StreamCompletionToken*>(tok_.get())->pollStream();
-    }
-private:
-    SocketChannel::Ptr ptr_;
-    io::intrusive_ptr<ReaderCompletionToken> tok_;
-};
-
-
 
 }
 }
+
+#include <futures/io/SocketFutures.h>
