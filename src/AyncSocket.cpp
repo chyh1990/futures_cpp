@@ -60,6 +60,7 @@ ssize_t SocketChannel::performRead(ReaderCompletionToken *tok, std::error_code &
             tok->readError(ec);
             return read_ret;
         } else if (read_ret == READ_WOULDBLOCK) {
+            // XXX not needed?
             tok->dataReady(0);
             return read_ret;
         } else if (read_ret == READ_EOF) {
@@ -76,6 +77,104 @@ ssize_t SocketChannel::performRead(ReaderCompletionToken *tok, std::error_code &
     }
     return READ_WOULDBLOCK;
 }
+
+void SocketChannel::handleInitialReadWrite() {
+    if (getPending(IOObject::OpRead).empty())
+        rio_.stop();
+    else
+        rio_.start();
+
+    if (getPending(IOObject::OpWrite).empty())
+        wio_.stop();
+    else
+        wio_.start();
+}
+
+void SocketChannel::onEvent(ev::io& watcher, int revent) {
+    if (revent & ev::ERROR)
+        throw std::runtime_error("syscall error");
+    if (revent & ev::READ) {
+        if (s_ == CONNECTED) {
+            auto &reader = getPending(IOObject::OpRead);
+            if (!reader.empty()) {
+                auto first = static_cast<ReaderCompletionToken*>(&reader.front());
+                std::error_code ec;
+                ssize_t ret = performRead(first, ec);
+                if (ret == READ_EOF) {
+                    // todo
+                    closeRead();
+                } else if (ret == READ_ERROR) {
+                    cleanup(CancelReason::IOObjectShutdown);
+                } else if (ret == READ_WOULDBLOCK) {
+                    // nothing
+                }
+            } else {
+                rio_.stop();
+            }
+        }
+    }
+    if (revent & ev::WRITE) {
+        if (s_ == CONNECTING) {
+            std::error_code ec;
+            bool connected = socket_.is_connected(ec);
+            auto &connect = getPending(IOObject::OpConnect);
+            while (!connect.empty()) {
+                auto p = static_cast<ConnectCompletionToken*>(&connect.front());
+                p->ec = ec;
+                p->notifyDone();
+            }
+
+            if (connected) {
+                s_ = CONNECTED;
+                handleInitialReadWrite();
+            } else {
+                cleanup(CancelReason::IOObjectShutdown);
+                return;
+            }
+        }
+        if (s_ == CONNECTED) {
+            auto &writer = getPending(IOObject::OpWrite);
+            while (!writer.empty()) {
+                auto p = static_cast<WriterCompletionToken*>(&writer.front());
+                std::error_code ec;
+                iovec *vec;
+                size_t vecLen = 0;
+                p->prepareIov(&vec, &vecLen);
+                if (!vecLen) {
+                    p->notifyDone();
+                    continue;
+                }
+                size_t countWritten;
+                size_t partialWritten;
+                ssize_t totalWritten = performWrite(vec, vecLen,
+                        &countWritten, &partialWritten, ec);
+                if (!ec) {
+                    p->updateIov(totalWritten, countWritten, partialWritten);
+                    if (countWritten == vecLen) {
+                        p->notifyDone();
+                        if (shutdown_flags_ & SHUT_WRITE_PENDING) {
+                            shutdownWriteNow();
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                } else {
+                    p->writeError(ec);
+                    cleanup(CancelReason::IOObjectShutdown);
+                    break;
+                }
+            }
+            if (writer.empty()) {
+                wio_.stop();
+                if (shutdown_flags_ & SHUT_WRITE_PENDING)
+                    shutdownWriteNow();
+            }
+        }
+    }
+
+}
+
 
 }
 }

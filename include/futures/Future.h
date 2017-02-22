@@ -431,9 +431,9 @@ private:
 
 // helper
 
-template <typename T>
-OkFuture<T> makeOk(T &&v) {
-  return OkFuture<T>(std::forward<T>(v));
+template <typename T, typename T0 = typename std::decay<T>::type>
+OkFuture<T0> makeOk(T &&v) {
+  return OkFuture<T0>(std::forward<T>(v));
 }
 
 static inline OkFuture<folly::Unit> makeOk() {

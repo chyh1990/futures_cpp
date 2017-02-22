@@ -9,11 +9,12 @@ namespace futures {
 namespace io {
 
 class SocketChannel : public Channel {
+protected:
     enum State {
         INITED,
+        CLOSED,
         CONNECTING,
         CONNECTED,
-        CLOSED,
     };
 
     enum ReadResult {
@@ -96,7 +97,7 @@ public:
         return tok;
     }
 
-    io::intrusive_ptr<ReaderCompletionToken> doRead(std::unique_ptr<ReaderCompletionToken> p) {
+    virtual io::intrusive_ptr<ReaderCompletionToken> doRead(std::unique_ptr<ReaderCompletionToken> p) {
         if (!getPending(IOObject::OpRead).empty())
             throw IOError("Already reading");
         if (s_ == INITED)
@@ -111,7 +112,7 @@ public:
         return tok;
     }
 
-    io::intrusive_ptr<WriterCompletionToken> doWrite(std::unique_ptr<WriterCompletionToken> p) {
+    virtual io::intrusive_ptr<WriterCompletionToken> doWrite(std::unique_ptr<WriterCompletionToken> p) {
         if (s_ == INITED)
             throw IOError("Not connecting");
         io::intrusive_ptr<WriterCompletionToken> tok(p.release());
@@ -176,7 +177,7 @@ public:
         }
     }
 
-private:
+protected:
     tcp::Socket socket_;
     folly::SocketAddress peer_addr_;
     State s_ = INITED;
@@ -195,97 +196,16 @@ private:
         }
     }
 
-    ssize_t performWrite(
+    virtual ssize_t performWrite(
             const iovec* vec,
             size_t count,
             size_t* countWritten,
             size_t* partialWritten,
             std::error_code &ec);
 
-    ssize_t performRead(ReaderCompletionToken *tok, std::error_code &ec);
+    virtual ssize_t performRead(ReaderCompletionToken *tok, std::error_code &ec);
 
-    void onEvent(ev::io& watcher, int revent) {
-        if (revent & ev::ERROR)
-            throw std::runtime_error("syscall error");
-        if (revent & ev::READ) {
-            if (s_ == CONNECTED) {
-                auto &reader = getPending(IOObject::OpRead);
-                if (!reader.empty()) {
-                    auto first = static_cast<ReaderCompletionToken*>(&reader.front());
-                    std::error_code ec;
-                    ssize_t ret = performRead(first, ec);
-                    if (ret == READ_EOF) {
-                        // todo
-                        closeRead();
-                    } else if (ret == READ_ERROR) {
-                        cleanup(CancelReason::IOObjectShutdown);
-                    } else if (ret == READ_WOULDBLOCK) {
-                        // nothing
-                    }
-                } else {
-                    rio_.stop();
-                }
-            }
-        }
-        if (revent & ev::WRITE) {
-            if (s_ == CONNECTING) {
-                std::error_code ec;
-                bool connected = socket_.is_connected(ec);
-                auto &connect = getPending(IOObject::OpConnect);
-                while (!connect.empty()) {
-                    auto p = static_cast<ConnectCompletionToken*>(&connect.front());
-                    p->ec = ec;
-                    p->notifyDone();
-                }
-
-                if (connected) {
-                    s_ = CONNECTED;
-                } else {
-                    cleanup(CancelReason::IOObjectShutdown);
-                    return;
-                }
-            }
-            if (s_ == CONNECTED) {
-                auto &writer = getPending(IOObject::OpWrite);
-                while (!writer.empty()) {
-                    auto p = static_cast<WriterCompletionToken*>(&writer.front());
-                    std::error_code ec;
-                    iovec *vec;
-                    size_t vecLen = 0;
-                    p->prepareIov(&vec, &vecLen);
-                    if (!vecLen) {
-                        p->notifyDone();
-                        continue;
-                    }
-                    size_t countWritten;
-                    size_t partialWritten;
-                    ssize_t totalWritten = performWrite(vec, vecLen,
-                            &countWritten, &partialWritten, ec);
-                    if (!ec) {
-                        p->updateIov(totalWritten, countWritten, partialWritten);
-                        if (countWritten == vecLen) {
-                            p->notifyDone();
-                            if (shutdown_flags_ & SHUT_WRITE_PENDING) {
-                                shutdownWriteNow();
-                                break;
-                            }
-                        } else {
-                            break;
-                        }
-                    } else {
-                        p->writeError(ec);
-                        cleanup(CancelReason::IOObjectShutdown);
-                        break;
-                    }
-                }
-                if (writer.empty()) {
-                    wio_.stop();
-                    if (shutdown_flags_ & SHUT_WRITE_PENDING)
-                        shutdownWriteNow();
-                }
-            }
-        }
-    }
+    void onEvent(ev::io& watcher, int revent);
 
     void closeRead() {
         rio_.stop();
@@ -308,6 +228,8 @@ private:
             p->writeError(std::make_error_code(std::errc::connection_aborted));
         }
     }
+
+    void handleInitialReadWrite();
 };
 
 class ConnectFuture : public FutureBase<ConnectFuture, folly::Unit> {
@@ -379,9 +301,12 @@ public:
 
         void prepareBuffer(void **buf, size_t *bufLen) override {
             if (!buf_) buf_ = folly::IOBuf::create(2048);
-            if (buf_->tailroom() == 0)
-                buf_->prev()->appendChain(folly::IOBuf::create(2048));
             auto last = buf_->prev();
+            assert(last);
+            if (last->tailroom() == 0) {
+                last->appendChain(folly::IOBuf::create(2048));
+                last = last->next();
+            }
             *buf = last->writableTail();
             *bufLen = last->tailroom();
         }

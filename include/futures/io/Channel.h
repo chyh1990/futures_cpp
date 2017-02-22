@@ -123,6 +123,7 @@ public:
     virtual void shutdownWriteNow() = 0;
 
     Channel(EventExecutor *ev) : IOObject(ev) {}
+    virtual bool good() const { return true; }
 
     virtual io::intrusive_ptr<WriterCompletionToken> doWrite(std::unique_ptr<WriterCompletionToken> p) = 0;
     virtual io::intrusive_ptr<ReaderCompletionToken> doRead(std::unique_ptr<ReaderCompletionToken> p) = 0;

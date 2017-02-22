@@ -68,3 +68,12 @@ TEST(StreamAdapter, WriteEndl) {
 
     EXPECT_EQ(q.front()->computeChainDataLength(), 6);
 }
+
+TEST(StreamAdapter, Copy) {
+    auto q = genBuffer();
+    IOBufStreambuf buf(&q);
+    std::istream is(&buf);
+
+    std::ostringstream oss;
+    oss << is.rdbuf();
+}

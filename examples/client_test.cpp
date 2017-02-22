@@ -2,6 +2,7 @@
 #include <futures/Signal.h>
 #include <futures/Timer.h>
 #include <futures/io/AsyncSocket.h>
+#include <futures/io/AsyncSSLSocket.h>
 #include <futures/io/PipelinedRpcFuture.h>
 #include <futures/codec/LineBasedDecoder.h>
 #include <futures/codec/StringEncoder.h>
@@ -32,6 +33,28 @@ static std::string getField(const char *buf,
     }
 }
 
+static BoxedFuture<io::SocketChannel::Ptr> connect(
+        EventExecutor *ev, io::SSLContext *ctx, const folly::SocketAddress &addr, bool ssl)
+{
+    if (ssl) {
+        auto sock = std::make_shared<io::SSLSocketChannel>(ev, ctx);
+        return io::ConnectFuture(sock, addr)
+            >> [sock] (Unit) {
+                return io::HandshakeFuture(sock);
+            }
+            | [sock] (Unit) {
+                io::SocketChannel::Ptr ptr = sock;
+                return ptr;
+            };
+    } else {
+        auto sock = std::make_shared<io::SocketChannel>(ev);
+        return io::ConnectFuture(sock, addr)
+            | [sock] (Unit) {
+                return sock;
+            };
+    }
+}
+
 int main(int argc, char *argv[])
 {
 
@@ -47,14 +70,17 @@ int main(int argc, char *argv[])
 
     std::string host = getField(argv[1], url, UF_HOST);
     std::string path = getField(argv[1], url, UF_PATH);
-    int port = url.port ? url.port : 80;
+    bool is_https = getField(argv[1], url, UF_SCHEMA) == "https";
+    int port = url.port ? url.port : (is_https ? 443 : 80);
     // int port = std::stoi(getField(argv[1], url, UF_PORT));
 
     EventExecutor loop(true);
     folly::SocketAddress addr(host.c_str(), port, true);
-    auto sock = std::make_shared<io::SocketChannel>(&loop);
-    auto f = io::ConnectFuture(sock, addr)
-        .andThen([sock, host] (folly::Unit) {
+    io::SocketChannel::Ptr sock;
+    io::SSLContext ctx;
+
+    auto f = connect(&loop, &ctx, addr, is_https)
+        .andThen([host] (io::SocketChannel::Ptr sock) {
             FUTURES_LOG(INFO) << "connected";
             auto client = std::make_shared<PipelineClientDispatcher<http::Request,
                 http::Response>>();
