@@ -22,16 +22,31 @@ struct isStream {
 };
 
 
+template <typename T>
+class BoxedStream;
 template <typename Stream, typename F>
 class ForEachFuture;
-
 template <typename T, typename F>
 class ForEach2Wrapper;
+template <typename T, typename Stream>
+class CollectStreamFuture;
+template <typename T, typename Stream, typename F>
+class FilterStream;
+template <typename T, typename Stream, typename F>
+class MapStream;
+template <typename T, typename Stream, typename F>
+class AndThenStream;
+template <typename T, typename Stream>
+class TakeStream;
+
+template <typename Stream>
+class StreamIterator;
 
 template <typename Derived, typename T>
 class StreamBase : public IStream<T> {
 public:
     using Item = T;
+    using iterator = StreamIterator<Derived>;
 
     Poll<Optional<T>> poll() override {
         assert(0 && "cannot call base poll");
@@ -49,6 +64,27 @@ public:
     StreamBase& operator=(StreamBase &&) = default;
     StreamBase(const StreamBase &) = delete;
     StreamBase& operator=(const StreamBase &) = delete;
+
+    BoxedStream<T> boxed();
+    /* implicit */ operator BoxedStream<T>() &&;
+
+    CollectStreamFuture<T, Derived> collect();
+
+    template <typename F>
+    FilterStream<T, Derived, F> filter(F&& f);
+
+    template <typename F, typename R = typename detail::resultOf<F, T>>
+    MapStream<R, Derived, F> map(F&& f);
+
+    template <typename F,
+             typename FutR = typename detail::resultOf<F, T>,
+             typename R = typename isFuture<FutR>::Inner>
+    AndThenStream<R, Derived, F> andThen(F&& f);
+
+    TakeStream<T, Derived> take(size_t n);
+
+    iterator begin();
+    iterator end();
 private:
     Derived move_self() {
         return std::move(*static_cast<Derived*>(this));
@@ -63,6 +99,23 @@ public:
     Poll<Optional<T>> poll() override {
         return makePollReady(Optional<T>());
     }
+};
+
+template <typename T>
+class BoxedStream : public StreamBase<BoxedStream<T>, T> {
+public:
+    using Item = T;
+
+    explicit BoxedStream(std::unique_ptr<IStream<T>> f)
+        : impl_(std::move(f)) {}
+
+    void clear() { impl_.reset(); }
+
+    Poll<Optional<T>> poll() override {
+      return impl_->poll();
+    }
+private:
+    std::unique_ptr<IStream<T>> impl_;
 };
 
 template <typename Iter,
@@ -123,6 +176,8 @@ public:
     StreamSpawn& operator=(StreamSpawn&&) = default;
     StreamSpawn(const StreamSpawn&) = delete;
     StreamSpawn& operator=(const StreamSpawn&) = delete;
+
+    unsigned long id() const { return id_; }
 private:
     // toplevel future or stream
     unsigned long id_;
@@ -130,6 +185,17 @@ private:
 
 };
 
+template <typename T>
+Poll<Optional<T>> makeStreamReady() {
+  return Poll<Optional<T>>(Optional<T>());
+}
+
+template <typename T, typename T0 = typename std::decay<T>::type>
+Poll<Optional<T0>> makeStreamReady(T&& v) {
+  return Poll<Optional<T0>>(Optional<T0>(std::forward<T>(v)));
+}
+
 }
 
 #include <futures/Stream-inl.h>
+#include <futures/detail/StreamIterator.h>

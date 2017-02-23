@@ -20,171 +20,77 @@ TEST(Stream, Empty) {
 
 TEST(Stream, Iter) {
     std::vector<std::string> v{"AAA", "BBB", "CCC"};
+    auto v_old = v;
     auto s = makeIterStream(std::make_move_iterator(v.begin()),
             std::make_move_iterator(v.end()));
-    auto f = s.forEach([] (std::string v) {
-        std::cerr << v << std::endl;
-    });
-
-    f.wait();
+    auto f = s.collect();
+    std::vector<std::string> v1 = f.value();
+    EXPECT_EQ(v_old, v1);
 }
 
-#if 0
-static BoxedFuture<folly::Unit> process(EventExecutor &ev, tcp::SocketPtr client) {
-    return delay(&ev, 0.5)
-        .andThen([&ev, client] (std::error_code ec) {
-            return tcp::Stream::send(&ev, client,
-                    folly::IOBuf::copyBuffer("TEST\n", 5, 0, 0));
-        })
-        .then([&ev] (Try<ssize_t> s) {
-            ev.stop();
-            return makeOk();
-        }).boxed();
-    // detail::resultOf<decltype(f), int>;
-}
-
-TEST(Stream, Listen) {
-    std::error_code ec;
-    auto s = std::make_shared<tcp::Socket>();
-    s->tcpServer("127.0.0.1", 8011, 32, ec);
-
-    EXPECT_TRUE(!ec);
-
-    EventExecutor loop;
-    auto f = tcp::Stream::acceptStream(&loop, s)
-        .forEach([&loop] (tcp::SocketPtr client) {
-            std::cerr << "FD " << client->fd() << std::endl;
-            loop.spawn(process(loop, client));
+TEST(Stream, Filter) {
+    std::vector<std::string> v{"AAA", "BBB1", "CCC"};
+    auto s = makeIterStream(std::make_move_iterator(v.begin()),
+            std::make_move_iterator(v.end()))
+        .filter([] (const std::string &s) {
+            return s.size() == 3;
         });
-    loop.spawn(std::move(f));
-    loop.run();
+
+    auto f = s.collect();
+    std::vector<std::string> v1 = f.value();
+    const std::vector<std::string> kResult{"AAA", "CCC"};
+    EXPECT_EQ(v1, kResult);
 }
 
-class IntDecoder: public io::DecoderBase<IntDecoder, int64_t> {
-public:
-    using Out = int64_t;
-
-    IntDecoder() {
-        buf_.resize(128);
-    }
-
-    Try<Optional<Out>> decode(folly::IOBufQueue &buf) {
-#if 0
-        assert(!buf.empty());
-        auto p = std::find(buf.front()->data(), buf.front()->tail(), '\n');
-        if (p == buf.front()->tail())
-            return Try<Optional<Out>>(folly::none);
-        size_t len = p - buf->data();
-        buf_.assign((const char*)buf->data(), len);
-        FUTURES_DLOG(INFO) << "GET: " << len << ", "
-            << buf_ << ", " << buf_.capacity();
-        buf->trimStart(len + 1);
-        return folly::makeTryWith([&] () {
-                int64_t v = std::stol(buf_);
-                return Optional<Out>(v);
+TEST(Stream, Map) {
+    std::vector<std::string> v{"AAA", "BBB1", "CCC"};
+    auto s = makeIterStream(std::make_move_iterator(v.begin()),
+            std::make_move_iterator(v.end()))
+        .map([] (const std::string &s) {
+            return s.length();
         });
-#endif
-    }
 
-#if 0
-    Try<void> encode(const Out& out,
-            std::unique_ptr<folly::IOBuf> &buf) {
-        const int kMaxLen = 32;
-        buf->reserve(0, kMaxLen);
-        int r = ::snprintf((char*)buf->tailroom(), 32, "%ld\n", out);
-        if ((r == -1) || (r >= kMaxLen))
-            return Try<folly::Unit>(IOError("number too long"));
-        return Try<folly::Unit>();
-    }
-#endif
-private:
-    std::string buf_;
-};
-
-static BoxedFuture<folly::Unit> process_frame(EventExecutor &ev, tcp::SocketPtr client) {
-    return io::FramedStream<IntDecoder>(
-            folly::make_unique<tcp::SocketIOHandler>(&ev, client))
-            .forEach([] (int64_t v) {
-                std::cerr << "V: " << v << std::endl;
-            })
-            .then([] (Try<folly::Unit> err) {
-                if (err.hasException()) {
-                    std::cerr << "ERR: " << err.exception().what() << std::endl;
-                }
-                return makeOk();
-            })
-            .boxed();
+    auto f = s.collect();
+    std::vector<size_t> v1 = f.value();
+    const std::vector<size_t> kResult{3, 4, 3};
+    EXPECT_EQ(v1, kResult);
 }
 
-TEST(Stream, Frame) {
-    std::error_code ec;
-    auto s = std::make_shared<tcp::Socket>();
-    s->tcpServer("127.0.0.1", 8011, 32, ec);
-
-    EXPECT_TRUE(!ec);
-
-    EventExecutor loop;
-    auto f = tcp::Stream::acceptStream(&loop, s)
-        .forEach([&loop] (tcp::SocketPtr client) {
-            std::cerr << "FD " << client->fd() << std::endl;
-            loop.spawn(process_frame(loop, client));
+TEST(Stream, AndThen) {
+    std::vector<std::string> v{"AAA", "BBB1", "CCC"};
+    auto s = makeIterStream(std::make_move_iterator(v.begin()),
+            std::make_move_iterator(v.end()))
+        .andThen([] (const std::string &s) {
+            return makeOk(s.length());
         });
-    loop.spawn(std::move(f));
-    loop.run();
+
+    auto f = s.collect();
+    std::vector<size_t> v1 = f.value();
+    const std::vector<size_t> kResult{3, 4, 3};
+    EXPECT_EQ(v1, kResult);
 }
 
-class DummyService: public Service<http::Request, http::Response> {
-public:
-    BoxedFuture<http::Response> operator()(http::Request req) {
-        std::cerr << req << std::endl;
-        http::Response resp;
-        // resp.http_errno = 200;
-        // resp.body = "XXXXX";
-        return makeOk(std::move(resp)).boxed();
+TEST(Stream, Take) {
+    const std::vector<int> v{0, 1, 2};
+    auto s = makeIterStream(v.begin(), v.end()).take(2);
+    const std::vector<int> kResult{0,1};
+    EXPECT_EQ(s.collect().value(), kResult);
+
+    auto s1 = makeIterStream(v.begin(), v.end()).take(10);
+    EXPECT_EQ(s1.collect().value(), v);
+}
+
+TEST(Stream, Iterator) {
+    std::vector<int> v{0, 1, 2};
+    auto s = makeIterStream(v.begin(), v.end());
+    int i = 0;
+    for (auto &e: s) {
+        EXPECT_EQ(e, i);
+        i++;
     }
-};
-
-static BoxedFuture<folly::Unit> process_http(EventExecutor &ev, tcp::SocketPtr client) {
-#if 1
-    return io::FramedStream<http::HttpV1Decoder>(folly::make_unique<tcp::SocketIOHandler>(&ev, client))
-            .forEach([] (http::Request v) {
-                std::cerr << "V: " << v << std::endl;
-            })
-            .then([] (Try<folly::Unit> err) {
-                if (err.hasException()) {
-                    std::cerr << "ERR: " << err.exception().what() << std::endl;
-                }
-                return makeOk();
-            })
-            .boxed();
-#else
-    io::FramedStream<http::HttpV1Codec> source(folly::make_unique<tcp::SocketIOHandler>(&ev, client));
-    io::FramedSink<http::HttpV1Codec> sink(folly::make_unique<tcp::SocketIOHandler>(&ev, client));
-    auto service = std::make_shared<DummyService>();
-    return PipelinedRpcFuture<http::HttpV1Codec>(service, std::move(source), std::move(sink)).boxed();
-#endif
 }
 
-TEST(Stream, Http) {
-    std::error_code ec;
-    auto s = std::make_shared<tcp::Socket>();
-    s->tcpServer("127.0.0.1", 8011, 32, ec);
-
-    EXPECT_TRUE(!ec);
-
-    EventExecutor loop;
-    auto f = tcp::Stream::acceptStream(&loop, s)
-        .forEach([&loop] (tcp::SocketPtr client) {
-            std::cerr << "FD " << client->fd() << std::endl;
-            loop.spawn(process_http(loop, client));
-        });
-    loop.spawn(std::move(f));
-    loop.run();
-
-}
-#endif
-
-TEST(Stream, Channel) {
+TEST(StreamIO, Channel) {
     EventExecutor loop;
     CpuPoolExecutor cpu(1);
 
@@ -216,7 +122,7 @@ TEST(Stream, Channel) {
     cpu.stop();
 }
 
-TEST(IO, NewSocket) {
+TEST(StreamIO, NewSocket) {
     EventExecutor ev;
 
     auto f = io::SocketChannel::connect(&ev, folly::SocketAddress("127.0.0.1", 8011))
@@ -248,7 +154,7 @@ static BoxedFuture<folly::Unit> doEcho(io::SocketChannel::Ptr sock) {
         }).boxed();
 }
 
-TEST(IO, Accept) {
+TEST(StreamIO, Accept) {
     EventExecutor ev;
     folly::SocketAddress addr("127.0.0.1", 8033);
     auto p = std::make_shared<io::AsyncServerSocket>(&ev, addr);

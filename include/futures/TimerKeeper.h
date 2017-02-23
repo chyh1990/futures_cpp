@@ -37,6 +37,15 @@ public:
 
         double getDeadline() const { return deadline_; }
 
+        void setDeadline(double deadline) {
+            FUTURES_CHECK(getState() != STARTED);
+            deadline_ = deadline;
+        }
+
+        void stop() {
+            cleanup(CancelReason::UserCancel);
+        }
+
         Poll<folly::Unit> poll() {
             switch (getState()) {
             case STARTED:
@@ -51,7 +60,7 @@ public:
 
     protected:
         ~CompletionToken() {
-            cleanup(CancelReason::UserCancel);
+            stop();
         }
 
         double deadline_;
@@ -62,6 +71,13 @@ public:
         addTimer(p.get());
         return p;
     }
+
+    io::intrusive_ptr<CompletionToken> doTimeout(std::unique_ptr<CompletionToken> tok) {
+        io::intrusive_ptr<CompletionToken> p(tok.release());
+        addTimer(p.get());
+        return p;
+    }
+
 
     inline TimerKeeperFuture timeout();
 

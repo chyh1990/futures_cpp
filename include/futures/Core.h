@@ -101,8 +101,8 @@ private:
 #define     FUTURES_DLOG(type)   futures::debug::nullstream()
 #endif
 
-#define     FUTURES_CHECK(x) if(x) {} else FUTURES_LOG(FATAL) << #x
-#define     FUTURES_DCHECK(x) if(x) {} else FUTURES_DLOG(FATAL) << #x
+#define     FUTURES_CHECK(x) if(x) {} else FUTURES_LOG(FATAL) << #x << ' '
+#define     FUTURES_DCHECK(x) if(x) {} else FUTURES_DLOG(FATAL) << #x << ' '
 
 #define 	FUTURES_CHECK_EQ(x, y)   FUTURES_CHECK((x) == (y))
 #define 	FUTURES_CHECK_LT(x, y)   FUTURES_CHECK((x) < (y))

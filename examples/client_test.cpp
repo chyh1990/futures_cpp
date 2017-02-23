@@ -77,7 +77,7 @@ static BoxedFuture<folly::Unit> fetch(EventExecutor *ev, io::SSLContext *ctx, co
             req.headers["Host"] = host;
             req.headers["Accept"] = "*/*";
             return (*client)(std::move(req))
-                .then([client] (Try<http::Response> req) {
+                << [client] (Try<http::Response> req) {
                     if (req.hasException()) {
                         std::cerr << "CALL: " << req.exception().what() << std::endl;
                     } else {
@@ -101,12 +101,12 @@ static BoxedFuture<folly::Unit> fetch(EventExecutor *ev, io::SSLContext *ctx, co
                         std::cerr << "========" << std::endl;
                     }
                     return makeOk();
-                })
-                .then([client] (Try<Unit> err) {
+                }
+                << [client] (Try<Unit> err) {
                     if (err.hasException())
                         FUTURES_LOG(ERROR) << err.exception().what();
                     return client->close();
-                });
+                };
         };
 }
 
