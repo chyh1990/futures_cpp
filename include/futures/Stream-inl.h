@@ -286,7 +286,7 @@ public:
 
   Poll<Item> poll() override {
     while (true) {
-      auto next = stream_->poll();
+      auto next = stream_.poll();
       if (next.hasException()) {
           return Poll<Item>(next.exception());
       } else if (next->hasValue()) {
