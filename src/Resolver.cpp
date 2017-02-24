@@ -66,7 +66,8 @@ void AsyncResolver::onPrepare(ev::prepare &watcher, int revent) {
 io::intrusive_ptr<AsyncResolver::CompletionToken>
 AsyncResolver::doResolve(const std::string &hostname, int flags) {
     if (!flags) throw std::invalid_argument("empty resolve flags");
-    auto p = io::intrusive_ptr<CompletionToken>(new CompletionToken(this));
+    auto p = io::intrusive_ptr<CompletionToken>(new CompletionToken());
+    p->attach(this);
     if (flags & EnableTypeA4) {
         struct dns_query *q = dns_submit_a4(ctx_, hostname.c_str(), 0, queryA4Callback, p.get());
         p->q[TypeA4] = q;

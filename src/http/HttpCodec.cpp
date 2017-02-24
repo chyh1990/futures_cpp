@@ -1,6 +1,5 @@
 #include <futures/io/StreamAdapter.h>
 #include <futures/http/HttpCodec.h>
-#include <futures/http/http_parser.h>
 extern "C" {
 #include <futures/http/ws_parser.h>
 }
@@ -12,187 +11,18 @@ extern "C" {
 namespace futures {
 namespace http {
 
-std::ostream& operator<< (std::ostream& stream, const HttpFrame& o) {
-    stream << "HTTP: " << http_method_str((http_method)o.method)
-        << " " << (int)o.err << "[" << http_errno_name((http_errno)o.err) << "]\n";
-    stream << "Content-Length: " << o.content_length << "\n";
-    stream << "Headers: \n";
-    for (auto &e: o.headers) {
-        stream << "  " << e.first << ": " << e.second << "\n";
-    }
-    stream << std::endl;
-    return stream;
-}
-
-struct Parser {
-    enum State {
-        INIT,
-        HEADER,
-        VALUE,
-    };
-
-    static int url_cb(http_parser* parser, const char *at, size_t length) {
-        Parser *self = static_cast<Parser*>(parser->data);
-        self->req_.path.append(std::string(at, length));
-
-        return 0;
-    }
-
-    static int header_field_cb(http_parser* parser, const char *at, size_t length) {
-        Parser *self = static_cast<Parser*>(parser->data);
-        if (self->s_ == VALUE)
-            self->req_.headers[self->field_] = self->value_;
-        if (self->s_ == INIT || self->s_ == VALUE) {
-            self->field_.assign(at, length);
-        } else if (self->s_ == HEADER) {
-            self->field_.append(std::string(at, length));
-        } else {
-            assert(0);
-        }
-        self->s_ = HEADER;
-        return 0;
-    }
-
-    static int header_value_cb(http_parser* parser, const char *at, size_t length) {
-        Parser *self = static_cast<Parser*>(parser->data);
-        if (self->s_ == VALUE) {
-            self->value_.append(std::string(at, length));
-        } else if (self->s_ == HEADER) {
-            self->value_.assign(at, length);
-        } else {
-            assert(0);
-        }
-        self->s_ = VALUE;
-        return 0;
-    }
-
-    static int body_cb(http_parser* parser, const char *at, size_t length) {
-        // FUTURES_DLOG(INFO) << "BODY: " << at << ", " << length;
-        // if (!length) return 0;
-        assert(length > 0);
-        Parser *self = static_cast<Parser*>(parser->data);
-        if (!self->allow_body_)
-            return 1;
-        assert(self->cur_buf_);
-        assert(self->cur_buf_->data() <= (const uint8_t*)at);
-        assert(self->cur_buf_->tail() >= (const uint8_t*)(at + length));
-
-        auto buf = self->cur_buf_->clone();
-        size_t trim_start = (const uint8_t*)at - self->cur_buf_->data();
-        size_t trim_end = self->cur_buf_->tail() - (const uint8_t*)(at + length);
-        buf->trimStart(trim_start);
-        buf->trimEnd(trim_end);
-        self->req_.body.append(std::move(buf));
-        return 0;
-    }
-
-    static int header_complete_cb(http_parser *parser) {
-        Parser *self = static_cast<Parser*>(parser->data);
-        if (self->s_ == VALUE)
-            self->req_.headers[self->field_] = self->value_;
-        self->req_.err = parser->http_errno;
-        self->req_.method = parser->method;
-        self->req_.content_length = parser->content_length;
-        return 0;
-    }
-
-    static int message_begin_cb(http_parser* parser) {
-        Parser *self = static_cast<Parser*>(parser->data);
-        if (self->completed_) {
-            FUTURES_LOG(WARNING) << "message begin without consuming previous result";
-            return 1;
-        }
-        self->reset();
-        return 0;
-    }
-
-    static int message_complete_cb(http_parser* parser) {
-        Parser *self = static_cast<Parser*>(parser->data);
-        FUTURES_DLOG(INFO) << "completed ";
-        self->completed_ = true;
-        return 0;
-    }
-
-    Parser(bool is_request, bool allow_body = true) : allow_body_(allow_body) {
-        http_parser_settings_init(&settings_);
-        settings_.on_message_begin = Parser::message_begin_cb;
-        settings_.on_url = Parser::url_cb;
-        settings_.on_header_field = Parser::header_field_cb;
-        settings_.on_header_value = Parser::header_value_cb;
-        settings_.on_headers_complete = Parser::header_complete_cb;
-        settings_.on_body = Parser::body_cb;
-        settings_.on_message_complete = Parser::message_complete_cb;
-        http_parser_init(&parser_, is_request ? HTTP_REQUEST : HTTP_RESPONSE);
-        parser_.data = this;
-
-        reset();
-    }
-
-    HttpFrame moveResult() {
-        // websocket handshake not completed
-        // assert(completed_);
-        completed_ = false;
-        return std::move(req_);
-    }
-
-    const HttpFrame &getResult() const {
-        return req_;
-    }
-
-    size_t execute(const std::unique_ptr<folly::IOBuf>& buf) {
-        assert(!cur_buf_);
-        cur_buf_ = buf.get();
-        size_t nparsed = http_parser_execute(&parser_, &settings_,
-                (const char*)buf->data(), buf->length());
-        cur_buf_ = nullptr;
-        return nparsed;
-    }
-
-    bool hasCompeleted() const {
-        return completed_;
-    }
-
-    const http_parser &getParser() const {
-        return parser_;
-    }
-
-private:
-    const bool allow_body_;
-    std::string field_;
-    std::string value_;
-    State s_;
-
-    http_parser parser_;
-    http_parser_settings settings_;
-    bool completed_;
-
-    const folly::IOBuf *cur_buf_ = nullptr;
-    HttpFrame req_;
-
-    void reset() {
-        completed_ = false;
-        field_.clear();
-        value_.clear();
-        req_.reset();
-        s_ = INIT;
-    }
-};
-
 HttpV1RequestDecoder::HttpV1RequestDecoder()
     : impl_(new Parser(true)) {
 }
 
-HttpV1RequestDecoder::~HttpV1RequestDecoder() = default;
-HttpV1RequestDecoder::HttpV1RequestDecoder(HttpV1RequestDecoder&&) = default;
-HttpV1RequestDecoder& HttpV1RequestDecoder::operator=(HttpV1RequestDecoder&&) = default;
-
-Try<Optional<HttpV1RequestDecoder::Out>> HttpV1RequestDecoder::decode(folly::IOBufQueue &buf)
+Try<Optional<HttpV1RequestDecoder::Out>>
+HttpV1RequestDecoder::decode(folly::IOBufQueue &buf)
 {
     while (!buf.empty()) {
         auto front = buf.pop_front();
-        size_t nparsed = impl_->execute(std::move(front));
+        size_t nparsed = impl_->execute(front.get());
         if (impl_->getParser().upgrade) {
-            return Try<Optional<Out>>(IOError("unsupported"));
+            return Try<Optional<Out>>(IOError("upgrade unsupported"));
         } else if (nparsed != front->length()) {
             return Try<Optional<Out>>(IOError("invalid http request"));
         }
@@ -208,15 +38,12 @@ HttpV1ResponseDecoder::HttpV1ResponseDecoder()
     : impl_(new Parser(false)) {
     }
 
-HttpV1ResponseDecoder::~HttpV1ResponseDecoder() = default;
-HttpV1ResponseDecoder::HttpV1ResponseDecoder(HttpV1ResponseDecoder&&) = default;
-HttpV1ResponseDecoder& HttpV1ResponseDecoder::operator=(HttpV1ResponseDecoder&&) = default;
-
-Try<Optional<HttpV1ResponseDecoder::Out>> HttpV1ResponseDecoder::decode(folly::IOBufQueue &buf)
+Try<Optional<HttpV1ResponseDecoder::Out>>
+HttpV1ResponseDecoder::decode(folly::IOBufQueue &buf)
 {
     while (!buf.empty()) {
         auto front = buf.pop_front();
-        size_t nparsed = impl_->execute(std::move(front));
+        size_t nparsed = impl_->execute(front.get());
         if (nparsed != front->length())
             return Try<Optional<Out>>(IOError("invalid http response"));
     }
@@ -374,7 +201,7 @@ RFC6455Decoder::decode(folly::IOBufQueue &buf) {
     assert(front);
     assert(front->countChainElements() == 1);
     if (s_ == HANDSHAKING) {
-        size_t nparsed = handshake_->execute(std::move(front));
+        size_t nparsed = handshake_->execute(front.get());
         if (handshake_->getParser().upgrade) {
             if (!upgradeToWebsocket(handshake_->getResult()))
                 return Try<Optional<Out>>(IOError("unsupported"));

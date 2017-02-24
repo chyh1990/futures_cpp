@@ -36,6 +36,7 @@ if (CPPBUILD_IS_TOPLEVEL)
   CPPBUILD_APP_TARGET(ex_socket examples/socket.cpp)
   CPPBUILD_APP_TARGET(ex_fake_http examples/fake_http.cpp)
   CPPBUILD_APP_TARGET(ex_client_test examples/client_test.cpp)
+  CPPBUILD_APP_TARGET(ex_connect_proxy examples/connect_proxy.cpp)
 endif()
 
 CPPBUILD_UNITTEST()

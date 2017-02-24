@@ -4,72 +4,20 @@
 #include <futures/io/IoFuture.h>
 #include <futures/io/Io.h>
 #include <futures/codec/Codec.h>
+#include <futures/http/HttpParser.h>
 
 namespace futures {
 namespace http {
 
-struct Parser;
-
-struct HttpFrame {
-    unsigned int err;
-    unsigned int http_errno;
-    unsigned int method;
-    uint64_t content_length;
-    std::string path;
-    std::unordered_map<std::string, std::string> headers;
-
-    folly::IOBufQueue body;
-
-    HttpFrame()
-        : body(folly::IOBufQueue::cacheChainLength()) {
-        reset();
-    }
-
-    void reset() {
-        err = 0;
-        method = 0;
-        content_length = 0;
-        http_errno = 0;
-        headers.clear();
-        path.clear();
-        body.clear();
-    }
-
-    bool hasContentLength() const {
-        return content_length < INT64_MAX;
-    }
-
-    friend std::ostream& operator<< (std::ostream& stream, const HttpFrame& frame);
-};
-
-class Request : public HttpFrame {
-public:
-    Request(HttpFrame &&f)
-        : HttpFrame(std::move(f)) {}
-
-    Request() {}
-};
-
-class Response : public HttpFrame {
-public:
-    Response() {}
-    Response(HttpFrame &&f)
-        : HttpFrame(std::move(f)) {}
-};
-
-std::ostream& operator<< (std::ostream& stream, const HttpFrame& o);
-
-class HttpV1RequestDecoder: public codec::DecoderBase<HttpV1RequestDecoder, Request> {
+class HttpV1RequestDecoder :
+    public codec::DecoderBase<HttpV1RequestDecoder, Request> {
 public:
     using Out = Request;
 
     HttpV1RequestDecoder();
-    ~HttpV1RequestDecoder();
 
     Try<Optional<Out>> decode(folly::IOBufQueue &buf);
 
-    HttpV1RequestDecoder(HttpV1RequestDecoder&&);
-    HttpV1RequestDecoder& operator=(HttpV1RequestDecoder&&);
 private:
     std::unique_ptr<Parser> impl_;
 };
@@ -80,16 +28,12 @@ public:
     using Out = Response;
 
     HttpV1ResponseDecoder();
-    ~HttpV1ResponseDecoder();
 
     Try<Optional<Out>> decode(folly::IOBufQueue &buf);
 
-    HttpV1ResponseDecoder(HttpV1ResponseDecoder&&);
-    HttpV1ResponseDecoder& operator=(HttpV1ResponseDecoder&&);
 private:
     std::unique_ptr<Parser> impl_;
 };
-
 
 class HttpV1ResponseEncoder:
     public codec::EncoderBase<HttpV1ResponseEncoder, Response> {

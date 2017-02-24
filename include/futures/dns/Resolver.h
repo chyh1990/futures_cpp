@@ -50,14 +50,16 @@ public:
         std::array<struct dns_query*, 4> q;
         ResolverResult addrs_;
 
-        CompletionToken(AsyncResolver *r)
+        CompletionToken()
             : io::CompletionToken(IOObject::OpRead) {
             q.fill(nullptr);
         }
 
         void checkPending() {
-            if (!hasPending())
+            if (!hasPending()) {
+                FUTURES_DLOG(INFO) << "notify";
                 notifyDone();
+            }
         }
 
         Poll<ResolverResult> poll() {

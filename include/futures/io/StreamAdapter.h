@@ -17,6 +17,7 @@ class BasicIOBufStreambuf : public std::basic_streambuf<CharT> {
             : q_(q), cur_(q->front()) {
                 assert(q);
                 CharT *p = static_cast<CharT*>(q_->writableTail());
+                assert(p);
                 Base::setp(p, p + q_->tailroom());
                 if (!cur_) {
                     Base::setg(nullptr, nullptr, nullptr);
