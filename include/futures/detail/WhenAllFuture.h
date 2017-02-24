@@ -23,6 +23,11 @@ public:
         }
     }
 
+    WhenAllFuture(std::vector<Fut> &&futs) {
+        for (auto it = futs.begin(); it != futs.end(); ++it)
+            all_.emplace_back(folly::left_tag, std::move(*it));
+    }
+
     Poll<Item> poll() {
         bool all_done = true;
         for (size_t i = 0; i < all_.size(); ++i) {
