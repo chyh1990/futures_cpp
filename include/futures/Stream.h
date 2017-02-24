@@ -38,6 +38,8 @@ template <typename T, typename Stream, typename F>
 class AndThenStream;
 template <typename T, typename Stream>
 class TakeStream;
+template <typename Stream>
+class DropStreamFuture;
 
 template <typename Stream>
 class StreamIterator;
@@ -82,6 +84,7 @@ public:
     AndThenStream<R, Derived, F> andThen(F&& f);
 
     TakeStream<T, Derived> take(size_t n);
+    DropStreamFuture<Derived> drop();
 
     iterator begin();
     iterator end();

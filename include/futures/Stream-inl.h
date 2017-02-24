@@ -275,6 +275,34 @@ private:
   size_t remain_;
 };
 
+template <typename Stream>
+class DropStreamFuture : public FutureBase<DropStreamFuture<Stream>, Unit>
+{
+public:
+  using Item = Unit;
+
+  explicit DropStreamFuture(Stream &&s)
+    : stream_(std::move(s)) {}
+
+  Poll<Item> poll() override {
+    while (true) {
+      auto next = stream_->poll();
+      if (next.hasException()) {
+          return Poll<Item>(next.exception());
+      } else if (next->hasValue()) {
+          if (!next->value().hasValue())
+              return makePollReady(unit);
+      } else {
+          return Poll<Item>(not_ready);
+      }
+    }
+  }
+
+private:
+  Stream stream_;
+};
+
+
 template <typename Derived, typename T>
 BoxedStream<T> StreamBase<Derived, T>::boxed() {
     std::unique_ptr<IStream<T>> p(new Derived(move_self()));
@@ -331,6 +359,12 @@ template <typename Derived, typename T>
 TakeStream<T, Derived>
 StreamBase<Derived, T>::take(size_t n) {
     return TakeStream<T, Derived>(move_self(), n);
+}
+
+template <typename Derived, typename T>
+DropStreamFuture<Derived>
+StreamBase<Derived, T>::drop() {
+    return DropStreamFuture<Derived>(move_self());
 }
 
 // helper methods
