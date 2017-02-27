@@ -5,8 +5,6 @@
 #include <futures/http/HttpCodec.h>
 #include <futures/io/PipelinedRpcFuture.h>
 #include <futures/io/IoStream.h>
-#include <futures/channel/UnboundedMPSCChannel.h>
-#include <futures/channel/ChannelStream.h>
 #include <futures/CpuPoolExecutor.h>
 #include <futures/io/AsyncSocket.h>
 #include <futures/io/AsyncServerSocket.h>
@@ -88,38 +86,6 @@ TEST(Stream, Iterator) {
         EXPECT_EQ(e, i);
         i++;
     }
-}
-
-TEST(StreamIO, Channel) {
-    EventExecutor loop;
-    CpuPoolExecutor cpu(1);
-
-    {
-        auto pipe = channel::makeUnboundedMPSCChannel<int>();
-        auto tx = std::move(pipe.first);
-        auto rx = std::move(pipe.second);
-        cpu.spawn_fn([tx] () mutable {
-            for (int i = 0; i < 3; ++i) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                tx.send(i);
-            }
-            return makeOk();
-        });
-
-        auto printer = channel::makeReceiverStream(std::move(rx))
-            .forEach([] (int v) {
-                std::cerr << v << std::endl;
-            }).then([] (Try<folly::Unit>) {
-                EventExecutor::current()->stop();
-                return makeOk();
-            });
-
-        loop.spawn(std::move(printer));
-    }
-
-    loop.run(true);
-    FUTURES_DLOG(INFO) << "ENDED";
-    cpu.stop();
 }
 
 TEST(StreamIO, NewSocket) {

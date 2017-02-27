@@ -10,6 +10,12 @@
 namespace futures {
 namespace channel {
 
+struct NullLock {
+    bool try_lock() { return true; }
+    void lock() {}
+    void unlock() {}
+};
+
 template <typename Channel>
 class BasicSender {
 public:

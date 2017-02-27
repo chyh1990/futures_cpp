@@ -125,3 +125,26 @@ TEST(Future, OrElse) {
 	EXPECT_EQ(f.value(), 4);
 }
 
+TEST(Future, StaticSelect) {
+	auto f = whenAny(
+			on(makeEmpty<Unit>(), [] (Unit) {
+				FUTURES_DLOG(INFO) << "case0";
+			}),
+			on(makeOk(1), [] (int v) {
+				FUTURES_DLOG(INFO) << "case1";
+			}),
+			on(makeOk(2), [] (int v) {
+				FUTURES_DLOG(INFO) << "case2";
+			}),
+			on(makeOk(std::string("A")), [] (std::string v) {
+				FUTURES_DLOG(INFO) << "case3";
+			})
+	);
+	EXPECT_EQ(f.value(), 1);
+}
+
+TEST(Future, StaticWhenAll) {
+	auto f = whenAll(makeOk(1), makeOk(std::string("OK")));
+	EXPECT_EQ(f.value(), std::make_tuple(1, std::string("OK")));
+}
+

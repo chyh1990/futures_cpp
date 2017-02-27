@@ -33,7 +33,7 @@ TEST(Resolver, TypeA) {
     auto timer = std::make_shared<TimerKeeper>(&ev, 1.0);
     auto l = makeLoop(0, [&ev, timer, resolver] (int i) {
         return testDns(&ev, timer, resolver)
-            .then([i] (Try<folly::Unit> err) {
+            .then([i] (Try<Unit> err) {
                 std::cerr << "Time: " << i << std::endl;
                 if (i >= 5) {
                     EventExecutor::current()->stop();

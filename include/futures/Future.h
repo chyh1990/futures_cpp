@@ -216,7 +216,8 @@ public:
         : v_(v) {
     }
 
-    explicit OkFuture(T&& v) noexcept
+    explicit OkFuture(T&& v)
+      noexcept(std::is_nothrow_move_constructible<T>::value)
         : v_(std::move(v)) {
     }
 
@@ -467,5 +468,6 @@ LazyFuture<Return, F> makeLazy(F&& f) {
 #include <futures/detail/SelectFuture.h>
 #include <futures/detail/WhenAllFuture.h>
 #include <futures/detail/LoopFn.h>
+#include <futures/detail/StaticMultiFuture.h>
 
 #include <futures/detail/SyntaxSugar.h>

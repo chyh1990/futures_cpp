@@ -12,7 +12,7 @@ class IFuture;
 template <typename Derived, typename T>
 class FutureBase;
 
-template <class> class Promise;
+template <class, class> class Promise;
 
 template <typename T, typename Inner>
 using isPollable = std::is_base_of<IFuture<Inner>, T>;

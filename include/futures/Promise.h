@@ -10,8 +10,8 @@ public:
         : std::runtime_error("invalid promise state") {}
 };
 
-template <typename T>
-class PromiseFuture : public FutureBase<PromiseFuture<T>, T> {
+template <typename T, class Lock = std::mutex>
+class PromiseFuture : public FutureBase<PromiseFuture<T, Lock>, T> {
 public:
     Poll<T> poll() override {
         if (v_.hasException() || v_.hasValue())
@@ -27,7 +27,7 @@ public:
         }
     }
 
-    explicit PromiseFuture(channel::OneshotChannelReceiver<Try<T>> &&recv)
+    explicit PromiseFuture(channel::OneshotChannelReceiver<Try<T>, Lock> &&recv)
         : recv_(std::move(recv)) {
     }
 
@@ -39,23 +39,23 @@ public:
         : v_(recv) {
     }
 private:
-    channel::OneshotChannelReceiver<Try<T>> recv_;
+    channel::OneshotChannelReceiver<Try<T>, Lock> recv_;
     Try<T> v_;
 };
 
 
-template <typename T>
+template <typename T, typename Lock = std::mutex>
 class Promise {
 public:
     Promise() {
-        auto p = channel::makeOneshotChannel<Try<T>>();
+        auto p = channel::makeOneshotChannel<Try<T>, Lock>();
         s_ = std::move(p.first);
         r_ = std::move(p.second);
     }
 
     PromiseFuture<T> getFuture() {
         if (!r_.isValid()) throw PromiseException();
-        return PromiseFuture<T>(std::move(r_));
+        return PromiseFuture<T, Lock>(std::move(r_));
     }
 
     void cancel() {
@@ -72,18 +72,20 @@ public:
     }
 
 private:
-    channel::OneshotChannelSender<Try<T>> s_;
-    channel::OneshotChannelReceiver<Try<T>> r_;
+    channel::OneshotChannelSender<Try<T>, Lock> s_;
+    channel::OneshotChannelReceiver<Try<T>, Lock> r_;
 };
 
-template <typename T, typename T0 = typename T::element_type>
+template <typename T, typename Lock = std::mutex,
+         typename T0 = typename T::element_type>
 PromiseFuture<T0> makePromiseFuture(T&& v) {
-    return PromiseFuture<T0>(std::forward<T>(v));
+    return PromiseFuture<T0, Lock>(std::forward<T>(v));
 }
 
-template <typename T, typename T0 = typename std::remove_reference<T>::type>
+template <typename T, typename Lock = std::mutex,
+         typename T0 = typename std::remove_reference<T>::type>
 PromiseFuture<T0> makeReadyPromiseFuture(T&& v) {
-    return PromiseFuture<T0>(Try<T0>(std::forward<T>(v)));
+    return PromiseFuture<T0, Lock>(Try<T0>(std::forward<T>(v)));
 }
 
 }

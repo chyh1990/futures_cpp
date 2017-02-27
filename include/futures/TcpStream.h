@@ -18,11 +18,14 @@ public:
     Socket(int fd) : fd_(fd) {}
     ~Socket();
 
-    bool connect(const std::string &addr, uint16_t port, std::error_code &ec) ;
+    bool connectIP(const std::string &addr, uint16_t port, std::error_code &ec) ;
+    bool connectUnix(const std::string &path, std::error_code &ec) ;
     bool connect(const folly::SocketAddress &addr, std::error_code &ec) ;
+
     bool is_connected(std::error_code &ec);
 
-    void tcpServer(const std::string& bindaddr, uint16_t port, int backlog, std::error_code &ec);
+    void tcpServer(const std::string& bindaddr, uint16_t port,
+            int backlog, std::error_code &ec);
 
     void close() noexcept;
     void shutdown(int how, std::error_code &ec) noexcept;

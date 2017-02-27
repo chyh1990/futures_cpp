@@ -16,11 +16,13 @@ public:
     // static_assert(isFuture<f_result>::value, "must return future");
 
     LoopFnFuture(S&& init, F&& f)
-        : func_(std::move(f)), fut_(func_(std::forward<S>(init)))
+        : func_(std::move(f)), init_(std::move(init))
     {
     }
 
     Poll<Item> poll() override {
+        if (!fut_)
+            fut_.emplace(func_(std::move(init_)));
         while (true) {
             auto r = fut_->poll();
             if (r.hasException())
@@ -38,6 +40,7 @@ public:
     }
 private:
     F func_;
+    S init_;
     Optional<f_result> fut_;
 };
 

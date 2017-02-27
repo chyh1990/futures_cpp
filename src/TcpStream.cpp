@@ -41,10 +41,39 @@ void Socket::shutdown(int how, std::error_code &ec) noexcept {
 
 bool Socket::connect(const folly::SocketAddress &addr, std::error_code &ec)
 {
-    return connect(addr.getAddressStr(), addr.getPort(), ec);
+    if (addr.getFamily() == AF_INET
+        || addr.getFamily() == AF_INET6) {
+        return connectIP(addr.getAddressStr(), addr.getPort(), ec);
+    } else if (addr.getFamily() == AF_UNIX) {
+        return connectUnix(addr.getPath(), ec);
+    } else {
+        ec = std::make_error_code(std::errc::protocol_not_supported);
+        return false;
+    }
 }
 
-bool Socket::connect(const std::string &addr, uint16_t port, std::error_code &ec)
+bool Socket::connectUnix(const std::string &path, std::error_code &ec)
+{
+    char buf[ANET_ERR_LEN];
+    char addr_buf[512];
+    if (path.size() > 511) {
+        ec = std::make_error_code(std::errc::invalid_argument);
+        return false;
+    }
+    strcpy(addr_buf, path.c_str());
+    fd_ = anetUnixNonBlockConnect(buf, addr_buf);
+    if (fd_ < 0) {
+        ec = current_system_error();
+        return false;
+    }
+    if (errno == EINPROGRESS)
+        return false;
+    return true;
+
+}
+
+bool Socket::connectIP(const std::string &addr, uint16_t port,
+        std::error_code &ec)
 {
     char buf[ANET_ERR_LEN];
     char addr_buf[256];

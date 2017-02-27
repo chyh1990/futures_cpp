@@ -5,7 +5,7 @@
 namespace futures {
 namespace channel {
 
-template <typename T>
+template <typename T, class Lock = std::mutex>
 class OnshotChannelImpl {
 public:
     using Item = T;
@@ -21,7 +21,7 @@ public:
 
     template <typename V>
     bool send(V &&v) {
-        std::lock_guard<std::mutex> g(mu_);
+        std::lock_guard<Lock> g(mu_);
         if (s_ == Closed) return false;
         if (s_ != NotReady) throw InvalidChannelStateException();
         v_ = std::forward<V>(v);
@@ -31,7 +31,7 @@ public:
     }
 
     Poll<T> poll() {
-        std::lock_guard<std::mutex> g(mu_);
+        std::lock_guard<Lock> g(mu_);
         if (s_ == Closed)
             return Poll<T>(FutureCancelledException());
         if (s_ == Ready) {
@@ -49,14 +49,14 @@ public:
     void addReceiver() {}
 
     void cancel() {
-        std::lock_guard<std::mutex> g(mu_);
+        std::lock_guard<Lock> g(mu_);
         if (s_ == Ready) throw InvalidChannelStateException();
         s_ = Ready;
         notify();
     }
 
     void closeSender() {
-        std::lock_guard<std::mutex> g(mu_);
+        std::lock_guard<Lock> g(mu_);
         if (s_ == NotReady) {
             s_ = Closed;
             notify();
@@ -69,7 +69,7 @@ public:
     }
 
 private:
-    std::mutex mu_;
+    Lock mu_;
     Status s_;  // use as memory barrier
     Optional<T> v_;
     Optional<Task> rx_task_;
@@ -80,17 +80,17 @@ private:
     }
 };
 
-template <typename T>
-using OneshotChannelSender = BasicSender<OnshotChannelImpl<T>>;
-template <typename T>
-using OneshotChannelReceiver = BasicReceiver<OnshotChannelImpl<T>>;
+template <typename T, typename Lock = std::mutex>
+using OneshotChannelSender = BasicSender<OnshotChannelImpl<T, Lock>>;
+template <typename T, typename Lock = std::mutex>
+using OneshotChannelReceiver = BasicReceiver<OnshotChannelImpl<T, Lock>>;
 
-template <typename T>
-std::pair<OneshotChannelSender<T>, OneshotChannelReceiver<T>>
+template <typename T, typename Lock = std::mutex>
+std::pair<OneshotChannelSender<T, Lock>, OneshotChannelReceiver<T, Lock>>
 makeOneshotChannel() {
-    auto p = std::make_shared<OnshotChannelImpl<T>>();
-    return std::make_pair(OneshotChannelSender<T>(p),
-            OneshotChannelReceiver<T>(p));
+    auto p = std::make_shared<OnshotChannelImpl<T, Lock>>();
+    return std::make_pair(OneshotChannelSender<T, Lock>(p),
+            OneshotChannelReceiver<T, Lock>(p));
 }
 
 }
