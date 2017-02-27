@@ -167,12 +167,13 @@ public:
 
 static BoxedFuture<folly::Unit> process(EventExecutor *ev,
     dns::AsyncResolver::Ptr resolver,
+    TimerKeeper::Ptr conn_timer,
     io::SocketChannel::Ptr client) {
   auto state = std::make_shared<ConnState>();
   state->inbound_ = client;
 
   return io::FramedStream<HttpV1ProxyDecoder>(client)
-    .andThen([resolver, state] (http::HttpFrame f) {
+    .andThen([resolver, conn_timer, state] (http::HttpFrame f) {
       FUTURES_DLOG(INFO) << f;
       if (!state->connected_ && !f.path.empty()) {
         state->is_connect = f.method == HTTP_CONNECT;
@@ -180,10 +181,11 @@ static BoxedFuture<folly::Unit> process(EventExecutor *ev,
         state->header_ = std::move(f);
 
         return (resolveWithCache(resolver, state->target_.host)
-          >> [state] (folly::IPAddress result) {
+          >> [state, conn_timer] (folly::IPAddress result) {
             folly::SocketAddress addr(result, state->target_.port);
             FUTURES_DLOG(INFO) << "connect: " << addr.getIPAddress().toJson();
-            return io::SocketChannel::connect(EventExecutor::current(), addr);
+            return timeout(conn_timer,
+              io::SocketChannel::connect(EventExecutor::current(), addr), "connect timeout");
           }
           >> [state] (io::SocketChannel::Ptr out) {
             FUTURES_DLOG(INFO) << "connected";
@@ -255,20 +257,26 @@ static BoxedFuture<folly::Unit> process(EventExecutor *ev,
 
 int main(int argc, char *argv[])
 {
+  if (argc != 3) {
+    std::cerr << "Usage: " << argv[0] << " [host] [port]" << std::endl;
+    return 1;
+  }
   EventExecutor loop(true);
-  folly::SocketAddress bindAddr("0.0.0.0", 8011);
+  folly::SocketAddress bindAddr(argv[1], atoi(argv[2]));
   auto s = std::make_shared<io::AsyncServerSocket>(&loop, bindAddr);
 
   auto resolver = std::make_shared<dns::AsyncResolver>(&loop);
   auto timer = std::make_shared<TimerKeeper>(&loop, 30.0);
+  auto conn_timer = std::make_shared<TimerKeeper>(&loop, 5.0);
 
   auto f = s->accept()
-    .forEach2([resolver, timer] (tcp::Socket client, folly::SocketAddress peer) {
+    .forEach2([resolver, timer, conn_timer]
+        (tcp::Socket client, folly::SocketAddress peer) {
         auto ev = EventExecutor::current();
         auto new_sock = std::make_shared<io::SocketChannel>(ev,
             std::move(client), peer);
         ev->spawn(
-            timeout(timer, process(ev, resolver, new_sock))
+            timeout(timer, process(ev, resolver, conn_timer, new_sock))
               .error([] (folly::exception_wrapper err) {
                 FUTURES_LOG(ERROR) << err.what();
               })

@@ -9,16 +9,20 @@ class TimeoutException: public std::runtime_error {
 public:
     TimeoutException()
         : std::runtime_error("Timeout") {}
+
+    TimeoutException(const std::string &source)
+        : std::runtime_error("Timeout from " + source) {}
 };
 
 template <typename Fut, typename TimerFut>
 class TimeoutFuture : public FutureBase<TimeoutFuture<Fut, TimerFut>, typename isFuture<Fut>::Inner>
 {
 public:
-    typedef typename isFuture<Fut>::Inner Item;
+    using Item = typename isFuture<Fut>::Inner;
 
-    TimeoutFuture(Fut&& f, TimerFut&& timer)
-        : f_(std::move(f)), timer_(std::move(timer))
+    TimeoutFuture(Fut&& f, TimerFut&& timer,
+            const std::string &desc)
+        : f_(std::move(f)), timer_(std::move(timer)), desc_(desc)
     {
     }
 
@@ -28,10 +32,10 @@ public:
             clear();
             return Poll<Item>(ra.exception());
         }
-        auto va = folly::moveFromTry(ra);
-        if (va.isReady()) {
+        if (ra->isReady()) {
             clear();
-            return Poll<Item>(TimeoutException());
+            return Poll<Item>(desc_.empty() ?
+                    TimeoutException() : TimeoutException(std::move(desc_)));
         }
         auto rb = f_->poll();
         if (rb.hasException()) {
@@ -47,6 +51,7 @@ public:
 private:
     Optional<Fut> f_;
     Optional<TimerFut> timer_;
+    std::string desc_;
 
     void clear() {
         f_.clear();
@@ -56,16 +61,18 @@ private:
 
 template <typename Fut>
 TimeoutFuture<Fut, TimerFuture>
-timeout(EventExecutor* ev, Fut &&f, double after) {
+timeout(EventExecutor* ev, Fut &&f, double after,
+        const std::string &desc = std::string()) {
     return TimeoutFuture<Fut, TimerFuture>(std::move(f),
-            TimerFuture(ev, after));
+            TimerFuture(ev, after), desc);
 }
 
 template <typename Fut>
 TimeoutFuture<Fut, TimerKeeperFuture>
-timeout(TimerKeeper::Ptr timer, Fut &&f) {
+timeout(TimerKeeper::Ptr timer, Fut &&f,
+        const std::string &desc = std::string()) {
     return TimeoutFuture<Fut, TimerKeeperFuture>(std::move(f),
-            timer->timeout());
+            timer->timeout(), desc);
 }
 
 

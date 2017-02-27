@@ -14,10 +14,13 @@ class TimerKeeper :
     {
 public:
     using Ptr = std::shared_ptr<TimerKeeper>;
+    static constexpr size_t kMaxNameLength = 31;
 
-    TimerKeeper(EventExecutor *ev, double timeout)
+    TimerKeeper(EventExecutor *ev, double timeout, const char *name = "")
         : io::IOObject(ev), timeout_(timeout), timer_(ev->getLoop()) {
         assert(timeout > 0);
+        strncpy(name_, name, kMaxNameLength+1);
+        name_[kMaxNameLength] = 0;
         timer_.set<TimerKeeper, &TimerKeeper::onTimer>(this);
     }
 
@@ -81,9 +84,11 @@ public:
 
     inline TimerKeeperFuture timeout();
 
+    const char *getName() const { return name_; }
 private:
     const double timeout_;
     ev::timer timer_;
+    char name_[kMaxNameLength+1];
 
     void addTimer(CompletionToken *tok) {
         // assert(!getPending().empty());
