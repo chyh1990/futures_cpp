@@ -16,7 +16,7 @@ public:
 
     HttpV1RequestDecoder();
 
-    Try<Optional<Out>> decode(folly::IOBufQueue &buf);
+    Optional<Out> decode(folly::IOBufQueue &buf);
 
 private:
     std::unique_ptr<Parser> impl_;
@@ -29,7 +29,7 @@ public:
 
     HttpV1ResponseDecoder();
 
-    Try<Optional<Out>> decode(folly::IOBufQueue &buf);
+    Optional<Out> decode(folly::IOBufQueue &buf);
 
 private:
     std::unique_ptr<Parser> impl_;
@@ -40,7 +40,7 @@ class HttpV1ResponseEncoder:
 public:
     using Out = Response;
 
-    Try<void> encode(Out&& out,
+    void encode(Out&& out,
             folly::IOBufQueue &buf);
 
 };
@@ -50,7 +50,7 @@ class HttpV1RequestEncoder:
 public:
     using Out = Request;
 
-    Try<void> encode(Out&& out,
+    void encode(Out&& out,
             folly::IOBufQueue &buf);
 
 };
@@ -106,7 +106,7 @@ public:
     RFC6455Decoder();
     ~RFC6455Decoder();
 
-    Try<Optional<Out>> decode(folly::IOBufQueue &buf);
+    Optional<Out> decode(folly::IOBufQueue &buf);
 
     RFC6455Decoder(RFC6455Decoder &&);
     RFC6455Decoder& operator=(RFC6455Decoder &&);
@@ -126,7 +126,7 @@ class RFC6455Encoder : public codec::EncoderBase<RFC6455Encoder, DataFrame> {
 public:
     using Out = DataFrame;
 
-    Try<void> encode(Out&& out,
+    void encode(Out&& out,
             folly::IOBufQueue &buf);
 
 private:

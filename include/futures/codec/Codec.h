@@ -13,18 +13,16 @@ class DecoderBase {
 public:
     using Out = T;
 
-    Try<Optional<Out>> decode(folly::IOBufQueue &buf) {
+    Optional<Out> decode(folly::IOBufQueue &buf) {
         assert(0 && "unimpl");
     }
 
-    Try<Out> decode_eof(folly::IOBufQueue &buf) {
+    Out decode_eof(folly::IOBufQueue &buf) {
         auto v = static_cast<Derived*>(this)->decode(buf);
-        if (v.hasException())
-            return Try<Out>(v.exception());
-        if (v->hasValue()) {
-            return Try<Out>(folly::moveFromTry(v).value());
+        if (v.hasValue()) {
+            return std::move(v).value();
         } else {
-            return Try<Out>(IOError("eof"));
+            throw IOError("decoder eof");
         }
     }
 
@@ -35,7 +33,7 @@ class EncoderBase {
 public:
     using Out = T;
 
-    Try<void> encode(Out&& out,
+    void encode(Out&& out,
             folly::IOBufQueue &buf) {
         assert(0 && "unimpl");
     }

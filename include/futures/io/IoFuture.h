@@ -64,22 +64,27 @@ public:
                     if (eof_) {
                         if (q_.empty())
                             return makePollReady(Optional<Item>());
-                        auto f = codec_.decode_eof(q_);
-                        if (f.hasException())
-                            return Poll<Optional<Item>>(f.exception());
-                        return makePollReady(Optional<Item>(folly::moveFromTry(f)));
+                        try {
+                            return makePollReady(Optional<Item>(codec_.decode_eof(q_)));
+                        } catch (std::exception &e) {
+                            return Poll<Optional<Item>>(
+                                folly::exception_wrapper(std::current_exception(), e));
+                        }
                     }
                     // FUTURES_DLOG(INFO) << "RDBUF: " << rdbuf_->length();
                     if (q_.empty()) {
                         readable_ = false;
                     } else {
-                        auto f = codec_.decode(q_);
-                        if (f.hasException())
-                            return Poll<Optional<Item>>(f.exception());
-                        if (f->hasValue()) {
-                            return makePollReady(folly::moveFromTry(f));
-                        } else {
-                            readable_ = false;
+                        try {
+                            auto f = codec_.decode(q_);
+                            if (f.hasValue()) {
+                                return makePollReady(std::move(f));
+                            } else {
+                                readable_ = false;
+                            }
+                        } catch (std::exception &e) {
+                            return Poll<Optional<Item>>(
+                                folly::exception_wrapper(std::current_exception(), e));
                         }
                     }
                 }
@@ -121,7 +126,11 @@ public:
     }
 
     Try<void> startSend(Out&& item) override {
-        return codec_.encode(std::move(item), q_);
+        try {
+            return Try<void>();
+        } catch (std::exception &e) {
+            return Try<void>(folly::exception_wrapper(std::current_exception(), e));
+        }
     }
 
     Poll<folly::Unit> pollComplete() override {

@@ -70,7 +70,7 @@ public:
     HttpV1ProxyDecoder()
       : impl_(new http::Parser(true)) {}
 
-    Try<Optional<Out>> decode(folly::IOBufQueue &buf) {
+    Optional<Out> decode(folly::IOBufQueue &buf) {
       assert(!upgraded_);
       while (!buf.empty()) {
         auto front = buf.pop_front();
@@ -83,17 +83,17 @@ public:
             FUTURES_DLOG(INFO) << "Upgrade to connect (raw tcp)";
             break;
           } else {
-            return Try<Optional<Out>>(IOError("upgrade unsupported"));
+            throw IOError("upgrade unsupported");
           }
         } else if (nparsed != front->length()) {
-          return Try<Optional<Out>>(IOError("invalid http request"));
+          throw IOError("invalid http request");
         }
       }
       if (impl_->hasHeaderCompeleted() || upgraded_) {
           FUTURES_DLOG(INFO) << impl_->getResult().path;
-          return Try<Optional<Out>>(impl_->moveResult());
+          return Optional<Out>(impl_->moveResult());
       } else {
-        return Try<Optional<Out>>(Optional<Out>());
+        return none;
       }
     }
 
@@ -204,7 +204,7 @@ static BoxedFuture<folly::Unit> process(EventExecutor *ev,
               state->header_.path = state->target_.path;
               // we don't track connection response, use EOF
               state->header_.headers["Connection"] = "close";
-              state->enc_.encode(http::Request(std::move(state->header_)), q).throwIfFailed();
+              state->enc_.encode(http::Request(std::move(state->header_)), q);
               assert(!q.empty());
               return state->outbound_->write(q.move());
             }

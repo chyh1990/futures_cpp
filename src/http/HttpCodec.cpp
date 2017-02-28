@@ -15,22 +15,22 @@ HttpV1RequestDecoder::HttpV1RequestDecoder()
     : impl_(new Parser(true)) {
 }
 
-Try<Optional<HttpV1RequestDecoder::Out>>
+Optional<HttpV1RequestDecoder::Out>
 HttpV1RequestDecoder::decode(folly::IOBufQueue &buf)
 {
     while (!buf.empty()) {
         auto front = buf.pop_front();
         size_t nparsed = impl_->execute(front.get());
         if (impl_->getParser().upgrade) {
-            return Try<Optional<Out>>(IOError("upgrade unsupported"));
+            throw IOError("upgrade unsupported");
         } else if (nparsed != front->length()) {
-            return Try<Optional<Out>>(IOError("invalid http request"));
+            throw IOError("invalid http request");
         }
     }
     if (impl_->hasCompeleted()) {
-        return Try<Optional<Out>>(Optional<Out>(impl_->moveResult()));
+        return Optional<Out>(impl_->moveResult());
     } else {
-        return Try<Optional<Out>>(Optional<Out>());
+        return none;
     }
 }
 
@@ -38,19 +38,19 @@ HttpV1ResponseDecoder::HttpV1ResponseDecoder()
     : impl_(new Parser(false)) {
     }
 
-Try<Optional<HttpV1ResponseDecoder::Out>>
+Optional<HttpV1ResponseDecoder::Out>
 HttpV1ResponseDecoder::decode(folly::IOBufQueue &buf)
 {
     while (!buf.empty()) {
         auto front = buf.pop_front();
         size_t nparsed = impl_->execute(front.get());
         if (nparsed != front->length())
-            return Try<Optional<Out>>(IOError("invalid http response"));
+            throw IOError("invalid http response");
     }
     if (impl_->hasCompeleted()) {
-        return Try<Optional<Out>>(Optional<Out>(impl_->moveResult()));
+        return Optional<Out>(impl_->moveResult());
     } else {
-        return Try<Optional<Out>>(Optional<Out>());
+        return none;
     }
 }
 
@@ -77,13 +77,13 @@ static const char *getHttpStatusLine(unsigned int http_errno) {
     return errs.get(http_errno);
 }
 
-Try<void> HttpV1ResponseEncoder::encode(
+void HttpV1ResponseEncoder::encode(
         http::Response&& out,
         folly::IOBufQueue &buf) {
     IOBufStreambuf sb(&buf);
     std::ostream ss(&sb);
     const char *error_line = getHttpStatusLine(out.http_errno);
-    if (!error_line) return Try<void>(IOError("invalid http response code"));
+    if (!error_line) throw IOError("invalid http response code");
 
     // std::ostringstream ss;
     ss << "HTTP/1.1 " << out.http_errno << ' ' << error_line << "\r\n";
@@ -99,10 +99,9 @@ Try<void> HttpV1ResponseEncoder::encode(
     ss.flush();
     buf.append(std::move(out.body), false);
 
-    return Try<void>();
 }
 
-Try<void> HttpV1RequestEncoder::encode(
+void HttpV1RequestEncoder::encode(
         http::Request&& out,
         folly::IOBufQueue &buf) {
     IOBufStreambuf sb(&buf);
@@ -120,7 +119,6 @@ Try<void> HttpV1RequestEncoder::encode(
     ss.flush();
     buf.append(std::move(out.body), false);
 
-    return Try<void>();
 }
 
 
@@ -195,7 +193,7 @@ inline bool upgradeToWebsocket(const http::HttpFrame& req) {
     return true;
 }
 
-Try<Optional<DataFrame>>
+Optional<DataFrame>
 RFC6455Decoder::decode(folly::IOBufQueue &buf) {
     auto front = buf.pop_front();
     assert(front);
@@ -204,18 +202,18 @@ RFC6455Decoder::decode(folly::IOBufQueue &buf) {
         size_t nparsed = handshake_->execute(front.get());
         if (handshake_->getParser().upgrade) {
             if (!upgradeToWebsocket(handshake_->getResult()))
-                return Try<Optional<Out>>(IOError("unsupported"));
+                throw IOError("unsupported");
             FUTURES_DLOG(INFO) << "Upgrading";
             s_ = STREAMING;
-            return Try<Optional<Out>>(DataFrame(DataFrame::HANDSHAKE, handshake_->moveResult()));
+            return DataFrame(DataFrame::HANDSHAKE, handshake_->moveResult());
         } else if (nparsed != front->length()) {
-            return Try<Optional<Out>>(IOError("invalid http request"));
+            throw IOError("invalid http request");
         } else {
-            return Try<Optional<Out>>(Optional<Out>());
+            return none;
         }
     } else {
         int nparsed = impl_->execute(front);
-        return Try<Optional<Out>>(Optional<Out>());
+        return none;
     }
 }
 
@@ -250,12 +248,12 @@ RFC6455Decoder::~RFC6455Decoder() = default;
 RFC6455Decoder::RFC6455Decoder(RFC6455Decoder &&) = default;
 RFC6455Decoder& RFC6455Decoder::operator=(RFC6455Decoder &&) = default;
 
-Try<void> RFC6455Encoder::encode(DataFrame&& out,
+void RFC6455Encoder::encode(DataFrame&& out,
         folly::IOBufQueue &buf) {
     if (out.getType() == DataFrame::HANDSHAKE_RESPONSE) {
         return http_encoder_.encode(std::move(*out.getHandshakeResponse()), buf);
     } else {
-        return Try<void>(IOError("unimpl"));
+        throw IOError("unimpl");
     }
 }
 
