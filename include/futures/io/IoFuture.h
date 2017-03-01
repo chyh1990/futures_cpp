@@ -127,6 +127,7 @@ public:
 
     Try<void> startSend(Out&& item) override {
         try {
+            codec_.encode(std::move(item), q_);
             return Try<void>();
         } catch (std::exception &e) {
             return Try<void>(folly::exception_wrapper(std::current_exception(), e));
