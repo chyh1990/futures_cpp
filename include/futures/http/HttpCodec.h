@@ -10,7 +10,7 @@ namespace futures {
 namespace http {
 
 class HttpV1RequestDecoder :
-    public codec::DecoderBase<HttpV1RequestDecoder, Request> {
+    public codec::DecoderBase<Request> {
 public:
     using Out = Request;
 
@@ -23,36 +23,34 @@ private:
 };
 
 class HttpV1ResponseDecoder:
-    public codec::DecoderBase<HttpV1ResponseDecoder, Response> {
+    public codec::DecoderBase<Response> {
 public:
     using Out = Response;
 
     HttpV1ResponseDecoder();
 
-    Optional<Out> decode(folly::IOBufQueue &buf);
+    Optional<Out> decode(folly::IOBufQueue &buf) override;
 
 private:
     std::unique_ptr<Parser> impl_;
 };
 
 class HttpV1ResponseEncoder:
-    public codec::EncoderBase<HttpV1ResponseEncoder, Response> {
+    public codec::EncoderBase<Response> {
 public:
     using Out = Response;
 
     void encode(Out&& out,
-            folly::IOBufQueue &buf);
+            folly::IOBufQueue &buf) override;
 
 };
 
 class HttpV1RequestEncoder:
-    public codec::EncoderBase<HttpV1RequestEncoder, Request> {
+    public codec::EncoderBase<Request> {
 public:
     using Out = Request;
 
-    void encode(Out&& out,
-            folly::IOBufQueue &buf);
-
+    void encode(Out&& out, folly::IOBufQueue &buf) override;
 };
 
 
@@ -99,14 +97,14 @@ private:
     Optional<http::HttpFrame> handshake_;
 };
 
-class RFC6455Decoder : public codec::DecoderBase<RFC6455Decoder, DataFrame> {
+class RFC6455Decoder : public codec::DecoderBase<DataFrame> {
 public:
     using Out = DataFrame;
 
     RFC6455Decoder();
     ~RFC6455Decoder();
 
-    Optional<Out> decode(folly::IOBufQueue &buf);
+    Optional<Out> decode(folly::IOBufQueue &buf) override;
 
     RFC6455Decoder(RFC6455Decoder &&);
     RFC6455Decoder& operator=(RFC6455Decoder &&);
@@ -122,12 +120,11 @@ private:
     std::unique_ptr<Parser> impl_;
 };
 
-class RFC6455Encoder : public codec::EncoderBase<RFC6455Encoder, DataFrame> {
+class RFC6455Encoder : public codec::EncoderBase<DataFrame> {
 public:
     using Out = DataFrame;
 
-    void encode(Out&& out,
-            folly::IOBufQueue &buf);
+    void encode(Out&& out, folly::IOBufQueue &buf) override;
 
 private:
     http::HttpV1ResponseEncoder http_encoder_;

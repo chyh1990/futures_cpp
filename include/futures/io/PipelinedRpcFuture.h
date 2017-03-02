@@ -226,12 +226,13 @@ public:
 
     RpcFuture(
             io::Channel::Ptr transport,
+            ReadStream&& stream, WriteSink&& sink,
             std::shared_ptr<DispatchType> dispatcher
             )
         :
         transport_(transport),
-        stream_(transport),
-        sink_(transport),
+        stream_(std::move(stream)),
+        sink_(std::move(sink)),
         dispatcher_(dispatcher) {
         }
 
@@ -247,11 +248,30 @@ private:
 
 template <typename ReadStream, typename WriteSink, typename Service>
 RpcFuture<ReadStream, WriteSink>
-makeRpcFuture(io::Channel::Ptr transport, std::shared_ptr<Service> service) {
+makeRpcFuture(
+        io::Channel::Ptr transport,
+        ReadStream&& stream, WriteSink &&sink,
+        std::shared_ptr<Service> service) {
     using Req = typename ReadStream::Item;
     using Resp = typename WriteSink::Out;
     return RpcFuture<ReadStream, WriteSink>(transport,
+            std::forward<ReadStream>(stream), std::forward<WriteSink>(sink),
             std::make_shared<PipelineDispatcher<Req, Resp>>(service));
 }
+
+template <typename ReadStream, typename WriteSink, typename Dispatch>
+RpcFuture<ReadStream, WriteSink>
+makeRpcClientFuture(io::Channel::Ptr transport,
+        ReadStream&& stream, WriteSink &&sink,
+        std::shared_ptr<Dispatch> dispatch) {
+    using Req = typename ReadStream::Item;
+    using Resp = typename WriteSink::Out;
+    return RpcFuture<ReadStream, WriteSink>(
+            transport,
+            std::forward<ReadStream>(stream), std::forward<WriteSink>(sink),
+            dispatch);
+}
+
+
 
 }

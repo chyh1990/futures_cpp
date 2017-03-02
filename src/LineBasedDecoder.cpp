@@ -14,7 +14,7 @@ LineBasedDecoder::LineBasedDecoder(uint32_t maxLength,
     , stripDelimiter_(stripDelimiter)
     , terminatorType_(terminatorType) {}
 
-Try<Optional<LineBasedOut>> LineBasedDecoder::decode(folly::IOBufQueue &buf)
+Optional<LineBasedOut> LineBasedDecoder::decode(folly::IOBufQueue &buf)
 {
   int64_t eol = findEndOfLine(buf);
 
@@ -25,7 +25,7 @@ Try<Optional<LineBasedOut>> LineBasedDecoder::decode(folly::IOBufQueue &buf)
       auto delimLength = c.read<char>() == '\r' ? 2 : 1;
       if (eol > maxLength_) {
         buf.split(eol + delimLength);
-        return Try<Optional<Out>>(IOError("line too long"));
+        throw IOError("line too long");
       }
 
       std::unique_ptr<folly::IOBuf> frame;
@@ -37,16 +37,16 @@ Try<Optional<LineBasedOut>> LineBasedDecoder::decode(folly::IOBufQueue &buf)
         frame = buf.split(eol + delimLength);
       }
 
-      return Try<Optional<Out>>(std::move(frame));
+      return Optional<Out>(std::move(frame));
     } else {
       auto len = buf.chainLength();
       if (len > maxLength_) {
         discardedBytes_ = len;
         buf.trimStart(len);
         discarding_ = true;
-        return Try<Optional<Out>>(IOError("line too long"));
+        throw IOError("line too long");
       }
-      return Try<Optional<Out>>(folly::none);
+      return Optional<Out>(folly::none);
     }
   } else {
     if (eol >= 0) {
@@ -61,7 +61,7 @@ Try<Optional<LineBasedOut>> LineBasedDecoder::decode(folly::IOBufQueue &buf)
       buf.move();
     }
 
-    return Try<Optional<Out>>(folly::none);
+    return Optional<Out>(folly::none);
   }
 }
 

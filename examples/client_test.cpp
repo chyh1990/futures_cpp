@@ -10,17 +10,6 @@
 
 using namespace futures;
 
-template <typename ReadStream, typename WriteSink, typename Dispatch>
-RpcFuture<ReadStream, WriteSink>
-makeRpcClientFuture(io::Channel::Ptr transport,
-        std::shared_ptr<Dispatch> dispatch) {
-    using Req = typename ReadStream::Item;
-    using Resp = typename WriteSink::Out;
-    return RpcFuture<ReadStream, WriteSink>(
-            transport,
-            dispatch);
-}
-
 static std::string getField(const char *buf,
         const http_parser_url& url, int field) {
     if (url.field_set & (1 << field)) {
@@ -69,8 +58,12 @@ static BoxedFuture<folly::Unit> fetch(EventExecutor *ev, io::SSLContext *ctx, co
             auto client = std::make_shared<PipelineClientDispatcher<http::Request,
                 http::Response>>();
             EventExecutor::current()->spawn(
-                    makeRpcClientFuture<io::FramedStream<http::HttpV1ResponseDecoder>,
-                    io::FramedSink<http::HttpV1RequestEncoder>>(sock, client));
+                    makeRpcClientFuture(
+                        sock,
+                        io::FramedStream<http::Response>(sock, std::shared_ptr<http::HttpV1ResponseDecoder>()),
+                        io::FramedSink<http::Request>(sock, std::shared_ptr<http::HttpV1RequestEncoder>()),
+                        client)
+                    );
             http::Request req;
             req.path = "/";
             req.method = HTTP_GET;

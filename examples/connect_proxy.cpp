@@ -63,14 +63,14 @@ static UrlResult parseUrl(const char *str, bool is_connect) {
 }
 
 class HttpV1ProxyDecoder :
-    public codec::DecoderBase<HttpV1ProxyDecoder, http::HttpFrame> {
+    public codec::DecoderBase<http::HttpFrame> {
 public:
     using Out = http::HttpFrame;
 
     HttpV1ProxyDecoder()
       : impl_(new http::Parser(true)) {}
 
-    Optional<Out> decode(folly::IOBufQueue &buf) {
+    Optional<Out> decode(folly::IOBufQueue &buf) override {
       assert(!upgraded_);
       while (!buf.empty()) {
         auto front = buf.pop_front();
@@ -172,7 +172,7 @@ static BoxedFuture<folly::Unit> process(EventExecutor *ev,
   auto state = std::make_shared<ConnState>();
   state->inbound_ = client;
 
-  return io::FramedStream<HttpV1ProxyDecoder>(client)
+  return io::FramedStream<http::HttpFrame>(client, std::make_shared<HttpV1ProxyDecoder>())
     .andThen([resolver, conn_timer, state] (http::HttpFrame f) {
       FUTURES_DLOG(INFO) << f;
       if (!state->connected_ && !f.path.empty()) {

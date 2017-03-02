@@ -7,7 +7,7 @@ namespace codec {
 
 using LineBasedOut = std::unique_ptr<folly::IOBuf>;
 
-class LineBasedDecoder : public codec::DecoderBase<LineBasedDecoder, LineBasedOut>
+class LineBasedDecoder : public codec::DecoderBase<LineBasedOut>
 {
 public:
   using Out = LineBasedOut;
@@ -23,7 +23,7 @@ public:
           bool stripDelimiter = true,
           TerminatorType terminatorType = TerminatorType::BOTH);
 
-  Try<Optional<Out>> decode(folly::IOBufQueue &buf);
+  Optional<Out> decode(folly::IOBufQueue &buf) override;
 
 private:
 

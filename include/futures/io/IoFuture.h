@@ -5,23 +5,24 @@
 #include <futures/AsyncSink.h>
 #include <futures/EventExecutor.h>
 #include <futures/io/Channel.h>
+#include <futures/codec/Codec.h>
 #include <futures/core/IOBufQueue.h>
 
 namespace futures {
 namespace io {
 
-template <typename Decoder>
+template <typename T>
 class FramedStream :
-    public StreamBase<FramedStream<Decoder>, typename Decoder::Out> {
+    public StreamBase<FramedStream<T>, T> {
 public:
-    using Item = typename Decoder::Out;
+    using Item = T;
 
     const static size_t kRdBufSize = 8 * 1024;
 
     struct FramedStreamReader : public ReaderCompletionToken {
-        FramedStreamReader()
+        FramedStreamReader(std::shared_ptr<codec::DecoderBase<T>> codec)
             : eof_(false), readable_(false),
-            q_(folly::IOBufQueue::cacheChainLength()) {
+            q_(folly::IOBufQueue::cacheChainLength()), codec_(codec) {
         }
 
         void readEof() {
@@ -52,7 +53,7 @@ public:
 
     private:
         folly::IOBufQueue q_;
-        Decoder codec_;
+        std::shared_ptr<codec::DecoderBase<T>> codec_;
         bool eof_;
         bool readable_;
 
@@ -65,7 +66,7 @@ public:
                         if (q_.empty())
                             return makePollReady(Optional<Item>());
                         try {
-                            return makePollReady(Optional<Item>(codec_.decode_eof(q_)));
+                            return makePollReady(Optional<Item>(codec_->decodeEof(q_)));
                         } catch (std::exception &e) {
                             return Poll<Optional<Item>>(
                                 folly::exception_wrapper(std::current_exception(), e));
@@ -76,7 +77,7 @@ public:
                         readable_ = false;
                     } else {
                         try {
-                            auto f = codec_.decode(q_);
+                            auto f = codec_->decode(q_);
                             if (f.hasValue()) {
                                 return makePollReady(std::move(f));
                             } else {
@@ -101,33 +102,34 @@ public:
         }
     };
 
-    FramedStream(Channel::Ptr io)
-        : io_(io) {
+    FramedStream(Channel::Ptr io, std::shared_ptr<codec::DecoderBase<T>> decoder)
+        : io_(io), codec_(decoder) {
     }
 
     Poll<Optional<Item>> poll() override {
         if (!tok_)
-            tok_ = io_->doRead(folly::make_unique<FramedStreamReader>());
+            tok_ = io_->doRead(folly::make_unique<FramedStreamReader>(codec_));
         return static_cast<FramedStreamReader*>(tok_.get())->pollStream();
     }
 private:
     Channel::Ptr io_;
+    std::shared_ptr<codec::DecoderBase<T>> codec_;
     intrusive_ptr<ReaderCompletionToken> tok_;
 };
 
-template <typename Encoder>
+template <typename T>
 class FramedSink :
-    public AsyncSinkBase<FramedSink<Encoder>, typename Encoder::Out> {
+    public AsyncSinkBase<FramedSink<T>, T> {
 public:
-    using Out = typename Encoder::Out;
+    using Out = T;
 
-    FramedSink(Channel::Ptr io)
-        : io_(std::move(io)) {
+    FramedSink(Channel::Ptr io, std::shared_ptr<codec::EncoderBase<T>> encoder)
+        : io_(std::move(io)), codec_(encoder) {
     }
 
     Try<void> startSend(Out&& item) override {
         try {
-            codec_.encode(std::move(item), q_);
+            codec_->encode(std::move(item), q_);
             return Try<void>();
         } catch (std::exception &e) {
             return Try<void>(folly::exception_wrapper(std::current_exception(), e));
@@ -151,7 +153,7 @@ public:
 
 private:
     Channel::Ptr io_;
-    Encoder codec_;
+    std::shared_ptr<codec::EncoderBase<T>> codec_;
     folly::IOBufQueue q_;
 
     intrusive_ptr<WriterCompletionToken> write_req_;

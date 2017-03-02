@@ -8,17 +8,15 @@
 namespace futures {
 namespace codec {
 
-template <class Derived, typename T>
+template <typename T>
 class DecoderBase {
 public:
     using Out = T;
 
-    Optional<Out> decode(folly::IOBufQueue &buf) {
-        assert(0 && "unimpl");
-    }
+    virtual Optional<Out> decode(folly::IOBufQueue &buf) = 0;
 
-    Out decode_eof(folly::IOBufQueue &buf) {
-        auto v = static_cast<Derived*>(this)->decode(buf);
+    virtual Out decodeEof(folly::IOBufQueue &buf) {
+        auto v = decode(buf);
         if (v.hasValue()) {
             return std::move(v).value();
         } else {
@@ -28,15 +26,13 @@ public:
 
 };
 
-template <class Derived, typename T>
+template <typename T>
 class EncoderBase {
 public:
     using Out = T;
 
-    void encode(Out&& out,
-            folly::IOBufQueue &buf) {
-        assert(0 && "unimpl");
-    }
+    virtual void encode(Out&& out,
+            folly::IOBufQueue &buf) = 0;
 };
 
 
