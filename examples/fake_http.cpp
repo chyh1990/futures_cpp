@@ -67,7 +67,7 @@ static BoxedFuture<folly::Unit> process(EventExecutor *ev,
     std::shared_ptr<SampleService> service) {
     using HttpStream = io::FramedStream<http::Request>;
     using HttpSink = io::FramedSink<http::Response>;
-    return makeRpcFuture<HttpStream, HttpSink>(
+    return makePipelineRpcFuture<HttpStream, HttpSink>(
       client,
       HttpStream(client, std::make_shared<http::HttpV1RequestDecoder>()),
       HttpSink(client, std::make_shared<http::HttpV1ResponseEncoder>()),

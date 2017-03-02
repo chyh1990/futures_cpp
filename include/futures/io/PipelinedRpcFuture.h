@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <map>
 #include <futures/io/IoFuture.h>
 #include <futures/io/IoStream.h>
 #include <futures/Promise.h>
@@ -58,6 +59,48 @@ private:
     const size_t max_inflight_;
     std::shared_ptr<Service<Req, Resp>> service_;
     std::deque<BoxedFuture<Resp>> in_flight_;
+};
+
+template <typename Req, typename Resp = Req>
+class MultiplexDispatcher : public IDispatcher<Req, Resp> {
+public:
+    MultiplexDispatcher(std::shared_ptr<Service<Req, Resp>> service,
+            size_t max_inflight = 128)
+        : service_(service), max_inflight_(max_inflight) {}
+
+    void dispatch(Req&& in) override {
+        if (in_flight_.size() >= max_inflight_)
+            throw DispatchException("too many inflight requests");
+        int64_t callid = in.getCallId();
+        in_flight_[callid] = (*service_)(std::move(in));
+    }
+
+    void dispatchErr(folly::exception_wrapper err) {}
+
+    bool has_in_flight() {
+        return !in_flight_.empty();
+    }
+
+    Poll<Optional<Resp>> poll() {
+        if (in_flight_.empty())
+            return Poll<Optional<Resp>>(not_ready);
+        for (auto it = in_flight_.begin(); it != in_flight_.end(); ++it) {
+            auto r = it->second->poll();
+            if (r.hasException()) {
+                in_flight_.erase(it);
+                return Poll<Optional<Resp>>(r.exception());
+            } else if (r->isReady()) {
+                in_flight_.erase(it);
+                return makePollReady(Optional<Resp>(folly::moveFromTry(r)));
+            }
+        }
+        return Poll<Optional<Resp>>(not_ready);
+    }
+
+private:
+    const size_t max_inflight_;
+    std::shared_ptr<Service<Req, Resp>> service_;
+    std::map<int64_t, BoxedFuture<Resp>> in_flight_;
 };
 
 template <typename Req, typename Resp = Req>
@@ -248,7 +291,7 @@ private:
 
 template <typename ReadStream, typename WriteSink, typename Service>
 RpcFuture<ReadStream, WriteSink>
-makeRpcFuture(
+makePipelineRpcFuture(
         io::Channel::Ptr transport,
         ReadStream&& stream, WriteSink &&sink,
         std::shared_ptr<Service> service) {
@@ -257,6 +300,19 @@ makeRpcFuture(
     return RpcFuture<ReadStream, WriteSink>(transport,
             std::forward<ReadStream>(stream), std::forward<WriteSink>(sink),
             std::make_shared<PipelineDispatcher<Req, Resp>>(service));
+}
+
+template <typename ReadStream, typename WriteSink, typename Service>
+RpcFuture<ReadStream, WriteSink>
+makeMultiplexRpcFuture(
+        io::Channel::Ptr transport,
+        ReadStream&& stream, WriteSink &&sink,
+        std::shared_ptr<Service> service) {
+    using Req = typename ReadStream::Item;
+    using Resp = typename WriteSink::Out;
+    return RpcFuture<ReadStream, WriteSink>(transport,
+            std::forward<ReadStream>(stream), std::forward<WriteSink>(sink),
+            std::make_shared<MultiplexDispatcher<Req, Resp>>(service));
 }
 
 template <typename ReadStream, typename WriteSink, typename Dispatch>
