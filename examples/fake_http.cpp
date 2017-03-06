@@ -8,6 +8,7 @@
 #include <futures/io/IoStream.h>
 #include <futures/io/AsyncSocket.h>
 #include <futures/io/AsyncServerSocket.h>
+#include <futures/EventThreadPool.h>
 #include <thread>
 #include <iostream>
 #include <futures/io/StreamAdapter.h>
@@ -87,18 +88,15 @@ int main(int argc, char *argv[])
   folly::SocketAddress bindAddr("127.0.0.1", 8011);
   auto s = std::make_shared<io::AsyncServerSocket>(&loop, bindAddr);
   const int kWorkers = 4;
+  EventThreadPool pool(kWorkers);
 
-  std::unique_ptr<EventExecutor> worker_loops[kWorkers];
   auto pservice = std::make_shared<SampleService>();
-
-  for (int i = 0; i < kWorkers; i++)
-    worker_loops[i].reset(new EventExecutor());
 
   std::cerr << "listening: " << 8011 << std::endl;
   auto f = s->accept()
-    .forEach2([&worker_loops, pservice] (tcp::Socket client, folly::SocketAddress peer) {
+    .forEach2([&pool, pservice] (tcp::Socket client, folly::SocketAddress peer) {
         // std::cerr << "accept from: " << peer.getAddressStr() << ":" << peer.getPort();
-        auto loop = worker_loops[rand() % kWorkers].get();
+        auto loop = pool.getExecutor();
         auto new_sock = std::make_shared<io::SocketChannel>(loop, std::move(client), peer);
         // auto loop = EventExecutor::current();
         loop->spawn(process(loop, new_sock, pservice));
@@ -110,30 +108,18 @@ int main(int argc, char *argv[])
       return makeOk();
       });
   auto sig = signal(&loop, SIGINT)
-    >> [&] (int signum) {
+    >> [&pool] (int signum) {
         std::cerr << "killed by " << signum << std::endl;
         EventExecutor::current()->stop();
-        for (int i = 0; i < kWorkers; ++i) {
-        worker_loops[i]->spawn(makeLazy([] () {
-              EventExecutor::current()->stop();
-              return folly::unit;
-            }));
-        }
+        pool.stop();
         return makeOk();
       };
   loop.spawn(std::move(f));
   loop.spawn(std::move(sig));
 
-  std::vector<std::thread> workers;
-  for (int i = 0 ;i <  kWorkers; ++i) {
-    auto worker = std::thread([&worker_loops, i] () {
-        worker_loops[i]->run(true);
-        });
-    workers.push_back(std::move(worker));
-  }
+  pool.start();
   loop.run();
-  for (auto &e: workers)
-    e.join();
+  pool.join();
 
   return 0;
 }
