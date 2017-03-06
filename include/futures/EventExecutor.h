@@ -83,9 +83,11 @@ public:
                 }
                 if (!getRunning()) {
                     break;
+                } else {
+                    continue;
                 }
             }
-            FUTURES_DLOG(INFO) << "START POLL: " << this;
+            FUTURES_DLOG(INFO) << "START POLL (running: " << getRunning() << "): " << this;
             getLoop().run(EVRUN_ONCE);
             FUTURES_DLOG(INFO) << "END POLL: " << this;
         }

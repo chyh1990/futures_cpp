@@ -12,6 +12,7 @@ private:
     EventExecutor *reactor_;
     int signum_;
     bool signaled_ = false;
+    bool aborted_ = false;
 
 public:
     SignalIOHandler(EventExecutor *reactor, Task task, int signum)
@@ -25,19 +26,27 @@ public:
 
     void operator()(ev::sig &io, int revents) {
         signaled_ = true;
-        task_.unpark();
+        notify();
     }
 
     void cleanup(CancelReason reason) override {
-        task_.unpark();
+        aborted_ = true;
+        notify();
     }
 
     bool hasSignal() const { return signaled_; }
+    bool hasAbort() const { return aborted_; }
 
     ~SignalIOHandler() {
         FUTURES_DLOG(INFO) << "SignalHandler stop";
+        // reactor_->unlinkWatcher(this);
+        // sig_.stop();
+    }
+private:
+    void notify() {
         reactor_->unlinkWatcher(this);
         sig_.stop();
+        task_.unpark();
     }
 };
 
@@ -68,6 +77,10 @@ public:
                 handler_.reset();
                 s_ = DONE;
                 return makePollReady(signum_);
+            } else if (handler_->hasAbort()) {
+                handler_.reset();
+                s_ = DONE;
+                return Poll<Item>(FutureCancelledException());
             }
             break;
         default:
