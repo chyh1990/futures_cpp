@@ -113,7 +113,7 @@ TEST(StreamIO, NewSocket) {
 }
 
 static BoxedFuture<folly::Unit> doEcho(io::SocketChannel::Ptr sock) {
-    return io::SockWriteFuture(sock, folly::IOBuf::copyBuffer("XXX", 3))
+    return io::WriteFuture(sock, folly::IOBuf::copyBuffer("XXX", 3))
         .error([] (folly::exception_wrapper w) {
             std::cerr << "WRITE_ERR: " << w.what() << std::endl;
         }).boxed();

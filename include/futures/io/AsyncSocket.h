@@ -9,8 +9,8 @@ namespace futures {
 namespace io {
 
 class SockConnectFuture;
-class SockWriteFuture;
-class SockReadStream;
+class WriteFuture;
+class ReadStream;
 
 class SocketChannel : public Channel,
     public std::enable_shared_from_this<SocketChannel> {
@@ -184,8 +184,8 @@ public:
 
     // future API
     static SockConnectFuture connect(EventExecutor *ev, const folly::SocketAddress &addr);
-    SockWriteFuture write(std::unique_ptr<folly::IOBuf> buf);
-    SockReadStream readStream();
+    WriteFuture write(std::unique_ptr<folly::IOBuf> buf);
+    ReadStream readStream();
 
 protected:
     tcp::Socket socket_;
@@ -232,8 +232,33 @@ protected:
     void handleInitialReadWrite();
 };
 
+class SockConnectFuture : public FutureBase<SockConnectFuture, SocketChannel::Ptr> {
+public:
+    using Item = SocketChannel::Ptr;
+
+    SockConnectFuture(EventExecutor *ev, const folly::SocketAddress &addr)
+        : ptr_(std::make_shared<SocketChannel>(ev)), addr_(addr) {}
+
+    Poll<Item> poll() override {
+        if (!ptr_) throw InvalidPollStateException();
+        if (!tok_)
+            tok_ = ptr_->doConnect(addr_);
+        auto r = tok_->poll();
+        if (r.hasException())
+            return Poll<Item>(r.exception());
+        else if (r->isReady())
+            return makePollReady(std::move(ptr_));
+        else
+            return Poll<Item>(not_ready);
+    }
+private:
+    SocketChannel::Ptr ptr_;
+    folly::SocketAddress addr_;
+    io::intrusive_ptr<SocketChannel::ConnectCompletionToken> tok_;
+};
+
 
 }
 }
 
-#include <futures/io/SocketFutures.h>
+#include <futures/io/ChannelFutures.h>

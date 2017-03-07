@@ -33,10 +33,10 @@ TARGET_LINK_LIBRARIES(futures_cpp udns ${SYS_DEP_LIBS})
 CPPBUILD_INSTALL_LIB(futures_cpp)
 
 if (CPPBUILD_IS_TOPLEVEL)
-  CPPBUILD_APP_TARGET(ex_socket examples/socket.cpp)
   CPPBUILD_APP_TARGET(ex_fake_http examples/fake_http.cpp)
   CPPBUILD_APP_TARGET(ex_client_test examples/client_test.cpp)
   CPPBUILD_APP_TARGET(ex_connect_proxy examples/connect_proxy.cpp)
+  CPPBUILD_APP_TARGET(ex_console examples/console.cpp)
 endif()
 
 CPPBUILD_UNITTEST()

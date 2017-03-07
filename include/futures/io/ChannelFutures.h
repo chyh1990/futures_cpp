@@ -7,36 +7,11 @@
 namespace futures {
 namespace io {
 
-class SockConnectFuture : public FutureBase<SockConnectFuture, SocketChannel::Ptr> {
-public:
-    using Item = SocketChannel::Ptr;
-
-    SockConnectFuture(EventExecutor *ev, const folly::SocketAddress &addr)
-        : ptr_(std::make_shared<SocketChannel>(ev)), addr_(addr) {}
-
-    Poll<Item> poll() override {
-        if (!ptr_) throw InvalidPollStateException();
-        if (!tok_)
-            tok_ = ptr_->doConnect(addr_);
-        auto r = tok_->poll();
-        if (r.hasException())
-            return Poll<Item>(r.exception());
-        else if (r->isReady())
-            return makePollReady(std::move(ptr_));
-        else
-            return Poll<Item>(not_ready);
-    }
-private:
-    SocketChannel::Ptr ptr_;
-    folly::SocketAddress addr_;
-    io::intrusive_ptr<SocketChannel::ConnectCompletionToken> tok_;
-};
-
-class SockWriteFuture : public FutureBase<SockWriteFuture, ssize_t> {
+class WriteFuture : public FutureBase<WriteFuture, ssize_t> {
 public:
     using Item = ssize_t;
 
-    SockWriteFuture(SocketChannel::Ptr ptr, std::unique_ptr<folly::IOBuf> buf)
+    WriteFuture(Channel::Ptr ptr, std::unique_ptr<folly::IOBuf> buf)
         : ptr_(ptr), buf_(std::move(buf)) {}
 
     Poll<Item> poll() override {
@@ -45,12 +20,12 @@ public:
         return tok_->poll();
     }
 private:
-    SocketChannel::Ptr ptr_;
+    Channel::Ptr ptr_;
     std::unique_ptr<folly::IOBuf> buf_;
     io::intrusive_ptr<WriterCompletionToken> tok_;
 };
 
-class SockReadStream : public StreamBase<SockReadStream, std::unique_ptr<folly::IOBuf>> {
+class ReadStream : public StreamBase<ReadStream, std::unique_ptr<folly::IOBuf>> {
 public:
     using Item = std::unique_ptr<folly::IOBuf>;
 
@@ -101,7 +76,7 @@ public:
         std::unique_ptr<folly::IOBuf> buf_;
     };
 
-    SockReadStream(SocketChannel::Ptr ptr)
+    ReadStream(Channel::Ptr ptr)
         : ptr_(ptr) {}
 
     Poll<Optional<Item>> poll() override {
@@ -110,7 +85,7 @@ public:
         return static_cast<StreamCompletionToken*>(tok_.get())->pollStream();
     }
 private:
-    SocketChannel::Ptr ptr_;
+    Channel::Ptr ptr_;
     io::intrusive_ptr<ReaderCompletionToken> tok_;
 };
 

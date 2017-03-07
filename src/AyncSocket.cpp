@@ -192,14 +192,14 @@ SocketChannel::connect(EventExecutor *ev, const folly::SocketAddress &addr) {
     return SockConnectFuture(ev, addr);
 }
 
-SockWriteFuture
+WriteFuture
 SocketChannel::write(std::unique_ptr<folly::IOBuf> buf) {
-    return SockWriteFuture(shared_from_this(), std::move(buf));
+    return WriteFuture(shared_from_this(), std::move(buf));
 }
 
-SockReadStream
+ReadStream
 SocketChannel::readStream() {
-    return SockReadStream(shared_from_this());
+    return ReadStream(shared_from_this());
 }
 
 }

@@ -44,10 +44,10 @@ TEST(IO, SSL) {
     auto f = io::SSLSocketChannel::connect(&ev, &ctx, addr)
         >> [] (io::SSLSocketChannel::Ptr sock) {
             const char req[] = "GET / HTTP/1.1\r\nHost: github.com\r\nUser-Agent: curl/7.35.0\r\n\r\n";
-            return io::SockWriteFuture(sock, folly::IOBuf::copyBuffer(req, sizeof(req)))
+            return io::WriteFuture(sock, folly::IOBuf::copyBuffer(req, sizeof(req)))
                 >> [sock] (size_t size) {
                     FUTURES_DLOG(INFO) << "written: " << size;
-                    return io::SockReadStream(sock)
+                    return io::ReadStream(sock)
                     .forEach([] (std::unique_ptr<folly::IOBuf> q) {
                             // FUTURES_DLOG(INFO) << "chain size: " << q->computeChainDataLength();
                             folly::IOBufQueue t;
