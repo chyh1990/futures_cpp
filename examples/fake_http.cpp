@@ -1,11 +1,10 @@
 #include <futures/EventExecutor.h>
-#include <futures/Signal.h>
+#include <futures/io/Signal.h>
 #include <futures/Timer.h>
 #include <futures/TcpStream.h>
 #include <futures/http/HttpCodec.h>
 #include <futures/http/HttpController.h>
-#include <futures/io/PipelinedRpcFuture.h>
-#include <futures/io/IoStream.h>
+#include <futures/service/RpcFuture.h>
 #include <futures/io/AsyncSocket.h>
 #include <futures/io/AsyncServerSocket.h>
 #include <futures/EventThreadPool.h>
@@ -68,7 +67,7 @@ static BoxedFuture<folly::Unit> process(EventExecutor *ev,
     std::shared_ptr<SampleService> service) {
     using HttpStream = io::FramedStream<http::Request>;
     using HttpSink = io::FramedSink<http::Response>;
-    return makePipelineRpcFuture<HttpStream, HttpSink>(
+    return service::makePipelineRpcFuture(
       client,
       HttpStream(client, std::make_shared<http::HttpV1RequestDecoder>()),
       HttpSink(client, std::make_shared<http::HttpV1ResponseEncoder>()),
@@ -107,7 +106,7 @@ int main(int argc, char *argv[])
         std::cerr << "Error: " << err.exception().what() << std::endl;
       return makeOk();
       });
-  auto sig = signal(&loop, SIGINT)
+  auto sig = io::signal(&loop, SIGINT)
     >> [&pool] (int signum) {
         std::cerr << "killed by " << signum << std::endl;
         EventExecutor::current()->stop();

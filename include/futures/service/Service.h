@@ -4,6 +4,7 @@
 #include <futures/EventExecutor.h>
 
 namespace futures {
+namespace service {
 
 template <typename Req, typename Resp = Req>
 class Service {
@@ -63,4 +64,5 @@ private:
 };
 #endif
 
+}
 }

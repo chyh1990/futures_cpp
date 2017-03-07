@@ -3,8 +3,8 @@
 #include <map>
 #include <array>
 #include <boost/regex.hpp>
-#include <futures/Service.h>
 #include <futures/http/HttpCodec.h>
+#include <futures/service/Service.h>
 
 namespace futures {
 namespace http {
@@ -21,7 +21,7 @@ public:
 
 };
 
-class HttpController : public Service<Request, Response> {
+class HttpController : public service::Service<Request, Response> {
 public:
   enum class HttpMethod : int {
     Delete,

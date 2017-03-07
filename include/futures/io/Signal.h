@@ -4,6 +4,7 @@
 #include <futures/EventExecutor.h>
 
 namespace futures {
+namespace io {
 
 class SignalIOHandler : public EventWatcherBase {
 private:
@@ -100,4 +101,5 @@ inline SignalFuture signal(EventExecutor* ev, int signum) {
     return SignalFuture(ev, signum);
 }
 
+}
 }

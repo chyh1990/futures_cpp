@@ -1,5 +1,5 @@
 #include <futures/EventExecutor.h>
-#include <futures/Signal.h>
+#include <futures/io/Signal.h>
 #include <futures/Timeout.h>
 #include <futures/http/HttpClient.h>
 #include <futures/core/Compression.h>
@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
             EventExecutor::current()->stop();
             return makeOk();
         };
-    auto sig = signal(&loop, SIGINT)
+    auto sig = io::signal(&loop, SIGINT)
         .andThen([&] (int signum) {
         FUTURES_DLOG(INFO) << "killed by " << signum;
         EventExecutor::current()->stop();

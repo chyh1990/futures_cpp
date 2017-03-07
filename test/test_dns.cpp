@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <futures/io/IoStream.h>
 #include <futures/EventExecutor.h>
 #include <futures/Timeout.h>
 #include <futures/dns/ResolverFuture.h>

@@ -1,11 +1,10 @@
 #include <futures/EventExecutor.h>
-#include <futures/Signal.h>
 #include <futures/Timeout.h>
 #include <futures/TcpStream.h>
 #include <futures/http/HttpParser.h>
 #include <futures/http/HttpController.h>
-#include <futures/io/PipelinedRpcFuture.h>
-#include <futures/io/IoStream.h>
+#include <futures/service/RpcFuture.h>
+#include <futures/io/Signal.h>
 #include <futures/io/AsyncSocket.h>
 #include <futures/io/AsyncServerSocket.h>
 #include <futures/dns/ResolverFuture.h>
@@ -287,7 +286,7 @@ int main(int argc, char *argv[])
         FUTURES_LOG(ERROR) << err.exception().what();
       return makeOk();
     };
-  auto sig = signal(&loop, SIGINT)
+  auto sig = io::signal(&loop, SIGINT)
     >> [&] (int signum) {
         std::cerr << "killed by " << signum << std::endl;
         EventExecutor::current()->stop();

@@ -4,7 +4,8 @@
 #include <futures/io/AsyncSocket.h>
 #include <futures/io/AsyncSSLSocket.h>
 #include <futures/dns/Resolver.h>
-#include <futures/io/PipelinedRpcFuture.h>
+#include <futures/service/RpcFuture.h>
+#include <futures/service/ClientDispatcher.h>
 
 namespace futures {
 namespace http {
@@ -66,7 +67,7 @@ public:
         return user_agent_;
     }
 private:
-    using dispatcher_type = PipelineClientDispatcher<http::Request, http::Response>;
+    using dispatcher_type = service::PipelineClientDispatcher<http::Request, http::Response>;
     EventExecutor *ev_;
     io::SSLContext *ssl_ctx_ = nullptr;
     dns::AsyncResolver::Ptr resolver_;

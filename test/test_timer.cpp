@@ -57,7 +57,7 @@ TEST(Future, AllTimeout) {
 				std::cerr << "Timer2 done" << std::endl;
 			return makeOk(2);
 		}).boxed());
-	auto all = whenAll(f.begin(), f.end())
+	auto all = makeWhenAll(f.begin(), f.end())
 		.andThen([] (std::vector<int> ids) {
 		std::cerr << "done" << std::endl;
 		return makeOk();

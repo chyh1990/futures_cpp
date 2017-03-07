@@ -3,8 +3,7 @@
 #include <futures/Timer.h>
 #include <futures/TcpStream.h>
 #include <futures/http/HttpCodec.h>
-#include <futures/io/PipelinedRpcFuture.h>
-#include <futures/io/IoStream.h>
+#include <futures/service/RpcFuture.h>
 #include <futures/CpuPoolExecutor.h>
 #include <futures/io/AsyncSocket.h>
 #include <futures/io/AsyncServerSocket.h>

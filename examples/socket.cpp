@@ -1,6 +1,6 @@
 #include <futures/EventExecutor.h>
 #include <futures/Timer.h>
-#include <futures/Signal.h>
+#include <futures/io/Signal.h>
 #include <futures/TcpStream.h>
 #include <iostream>
 
