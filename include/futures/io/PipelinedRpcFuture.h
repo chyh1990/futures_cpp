@@ -65,14 +65,14 @@ template <typename Req, typename Resp = Req>
 class MultiplexDispatcher : public IDispatcher<Req, Resp> {
 public:
     MultiplexDispatcher(std::shared_ptr<Service<Req, Resp>> service,
-            size_t max_inflight = 128)
+            size_t max_inflight = 1024)
         : service_(service), max_inflight_(max_inflight) {}
 
     void dispatch(Req&& in) override {
         if (in_flight_.size() >= max_inflight_)
             throw DispatchException("too many inflight requests");
         int64_t callid = in.getCallId();
-        in_flight_[callid] = (*service_)(std::move(in));
+        in_flight_.insert(std::make_pair(callid, (*service_)(std::move(in))));
     }
 
     void dispatchErr(folly::exception_wrapper err) {}
@@ -85,7 +85,7 @@ public:
         if (in_flight_.empty())
             return Poll<Optional<Resp>>(not_ready);
         for (auto it = in_flight_.begin(); it != in_flight_.end(); ++it) {
-            auto r = it->second->poll();
+            auto r = it->second.poll();
             if (r.hasException()) {
                 in_flight_.erase(it);
                 return Poll<Optional<Resp>>(r.exception());
@@ -179,6 +179,86 @@ private:
         notify();
     }
 };
+
+template <typename Req, typename Resp = Req>
+class MultiplexClientDispatcher :
+    public Service<Req, Resp>,
+    public IDispatcher<Resp, Req> {
+public:
+
+    BoxedFuture<Resp> operator()(Req req) override {
+        Promise<Resp> p;
+        auto callid = req.getCallId();
+        in_flight_.push_back(std::move(req));
+        auto f = p.getFuture();
+        promise_.insert(std::make_pair(callid, std::move(p)));
+        notify();
+        return f.boxed();
+    }
+
+    void dispatch(Resp&& in) override {
+        // if (closed_)
+        //     throw DispatchException("already closed");
+        auto callid = in.getCallId();
+        auto it = promise_.find(callid);
+        if (it == promise_.end())
+            throw DispatchException("unexpected server response with callid: " + std::to_string(callid));
+        it->second.setValue(std::move(in));
+        promise_.erase(it);
+    }
+
+    void dispatchErr(folly::exception_wrapper err) override {
+        for (auto &e: promise_)
+            e.second.setException(err);
+        closeNow();
+    }
+
+    Poll<Optional<Req>> poll() override {
+        if (in_flight_.empty()) {
+            if (closed_) {
+                return makePollReady(Optional<Req>());
+            } else {
+                park();
+                return Poll<Optional<Req>>(not_ready);
+            }
+        }
+        auto req = makePollReady(Optional<Req>(std::move(in_flight_.front())));
+        in_flight_.pop_front();
+        return req;
+    }
+
+    bool has_in_flight() override {
+        return !in_flight_.empty();
+    }
+
+    BoxedFuture<folly::Unit> close() override {
+        closeNow();
+        return makeOk().boxed();
+    }
+
+private:
+    bool closed_ = false;
+    std::deque<Req> in_flight_;
+    std::map<int64_t, Promise<Resp>> promise_;
+    Optional<Task> task_;
+
+    void park() {
+        task_ = CurrentTask::park();
+    }
+
+    void notify() {
+        if (task_) task_->unpark();
+        task_.clear();
+    }
+
+    void closeNow() {
+        promise_.clear();
+        in_flight_.clear();
+        closed_ = true;
+        notify();
+    }
+};
+
 
 template <typename ReadStream, typename WriteSink>
 class RpcFuture : public FutureBase<RpcFuture<ReadStream, WriteSink>, folly::Unit> {

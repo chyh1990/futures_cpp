@@ -63,7 +63,7 @@ private:
 template <typename It,
          typename Fut = typename std::iterator_traits<It>::value_type,
          typename = typename isFuture<Fut>::Inner >
-WhenAllFuture<Fut> whenAll(It begin, It end) {
+WhenAllFuture<Fut> makeWhenAll(It begin, It end) {
     return WhenAllFuture<Fut>(begin, end);
 }
 
