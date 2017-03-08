@@ -209,7 +209,7 @@ public:
       if (inner.isReady()) {
         if (inner->hasValue()) {
             try {
-                fut_ = func_(std::move(inner).value().value());
+                fut_.emplace(func_(std::move(inner).value().value()));
             } catch (std::exception &e) {
                 stream_.clear();
                 return Poll<Optional<Item>>(
