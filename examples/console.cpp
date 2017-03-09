@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
   auto in = std::make_shared<io::PipeChannel>(&loop, folly::File(fileno(stdin)), folly::File());
   auto f = in->readStream()
     .forEach([] (std::unique_ptr<folly::IOBuf> buf) {
-        FUTURES_DLOG(INFO) << buf->coalesce().str();
+        FUTURES_LOG(INFO) << "input: " << buf->coalesce().str();
     })
     | [] (Unit) {
       EventExecutor::current()->stop();
