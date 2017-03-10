@@ -24,6 +24,8 @@
 #include <folly/portability/Config.h>
 
 #include <folly/CPortability.h>
+#else
+#include <futures/core/portability/Config.h>
 #endif
 
 #if defined(__APPLE__)
