@@ -12,6 +12,16 @@ extern "C" {
 namespace futures {
 namespace tcp {
 
+#ifdef SO_NOSIGPIPE
+static inline void setNoSigPipe(int fd) {
+    int val = 1;
+    int r = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, (void*)&val, sizeof(val));
+    if (r) FUTURES_LOG(FATAL) << "setsockopt: SO_NOSIGPIPE";
+}
+#else
+static inline void setNoSigPipe(int fd) {}
+#endif
+
 inline std::error_code current_system_error(int e = errno) {
     return std::error_code(e, std::system_category());
 }
@@ -66,6 +76,7 @@ bool Socket::connectUnix(const std::string &path, std::error_code &ec)
         ec = current_system_error();
         return false;
     }
+    setNoSigPipe(fd_);
     if (errno == EINPROGRESS)
         return false;
     return true;
@@ -87,6 +98,7 @@ bool Socket::connectIP(const std::string &addr, uint16_t port,
         ec = current_system_error();
         return false;
     }
+    setNoSigPipe(fd_);
     if (errno == EINPROGRESS)
         return false;
     return true;
@@ -124,7 +136,9 @@ ssize_t Socket::writev(const iovec *vec, size_t veclen, int flags, std::error_co
 
     int msg_flags = MSG_DONTWAIT;
 
+#ifdef MSG_NOSIGNAL
     msg_flags |= MSG_NOSIGNAL;
+#endif
 
 again:
     ssize_t sent = ::sendmsg(fd_, &msg, msg_flags);
@@ -211,6 +225,7 @@ again:
             ::close(fd);
             return Socket();
         }
+    	setNoSigPipe(fd_);
         peer->setFromSockaddr((struct sockaddr*)&sa);
         return Socket(fd);
     }

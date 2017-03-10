@@ -29,6 +29,8 @@
 #include <string>
 #include <type_traits>
 #include <cassert>
+#include <functional>
+#include <ostream>
 
 // libc++ doesn't provide this header, nor does msvc
 #ifdef FOLLY_HAVE_BITS_CXXCONFIG_H
@@ -41,6 +43,7 @@
 #include <bits/c++config.h>
 #endif
 
+#include <futures/core/Portability.h>
 #include <futures/core/Hash.h>
 #include <futures/core/detail/Constexpr.h>
 #include <futures/core/detail/RangeCommon.h>

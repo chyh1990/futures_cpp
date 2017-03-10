@@ -27,10 +27,12 @@
 
 #include <cassert>
 #include <limits>
+#include <algorithm>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/uio.h>
 
 namespace folly {
 

@@ -9,8 +9,11 @@ namespace io {
 
 class SSLException : public std::runtime_error {
 public:
-    SSLException(const std::string& err)
+    explicit SSLException(const std::string& err)
         : std::runtime_error(err) {}
+
+    explicit SSLException(const char *err)
+	: std::runtime_error(err) {}
 };
 
 class SSLContext {

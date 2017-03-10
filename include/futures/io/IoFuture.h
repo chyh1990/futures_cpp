@@ -25,7 +25,7 @@ public:
             q_(folly::IOBufQueue::cacheChainLength()), codec_(codec) {
         }
 
-        void readEof() {
+        void readEof() override {
             ReaderCompletionToken::readEof();
         }
 

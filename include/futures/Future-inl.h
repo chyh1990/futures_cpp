@@ -1,4 +1,5 @@
 #include <futures/Future.h>
+#include <vector>
 
 namespace futures {
 

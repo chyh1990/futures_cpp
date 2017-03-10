@@ -48,7 +48,9 @@
 #include "GlogDummy.h"
 #endif
 
+#if __linux__
 #define FOLLY_HAVE_PIPE2 1
+#endif
 
 constexpr int kExecFailure = 127;
 constexpr int kChildFailure = 126;
@@ -396,6 +398,7 @@ void Subprocess::spawnInternal(
     envHolder = cloneStrings(*env);
     envVec = const_cast<char**>(envHolder.get());
   } else {
+    extern char **environ;
     envVec = environ;
   }
 

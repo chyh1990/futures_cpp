@@ -120,7 +120,11 @@ BoxedFuture<ssize_t> AsyncFile::write(buf_ptr buf)
 
 void AsyncFile::fsyncSync(bool data_only) {
     if (data_only) {
+#if __linux__
         int rc = ::fdatasync(file_.fd());
+#else
+        int rc = ::fsync(file_.fd());
+#endif
         if (rc) throwSystemError("fdatasync");
     } else {
         int rc = ::fsync(file_.fd());

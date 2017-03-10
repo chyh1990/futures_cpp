@@ -19,7 +19,11 @@ public:
     };
 
     static Derive* this_thread() {
+#if __APPLE__
+        static Derive _tls;
+#else
         thread_local Derive _tls;
+#endif
         return &_tls;
     }
 

@@ -167,7 +167,7 @@ public:
         case CONNECTED:
             shutdown_flags_ |= SHUT_WRITE;
             wio_.stop();
-            socket_.shutdown(::SHUT_WR, ec);
+            socket_.shutdown(SHUT_WR, ec);
             failAllWrites();
             return;
         case CONNECTING:

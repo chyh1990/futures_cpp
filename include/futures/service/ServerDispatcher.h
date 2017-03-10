@@ -23,13 +23,13 @@ public:
         in_flight_.push_back(std::move(f));
     }
 
-    void dispatchErr(folly::exception_wrapper err) {}
+    void dispatchErr(folly::exception_wrapper err) override {}
 
-    bool has_in_flight() {
+    bool has_in_flight() override {
         return !in_flight_.empty();
     }
 
-    Poll<Optional<Resp>> poll() {
+    Poll<Optional<Resp>> poll() override {
         if (in_flight_.empty())
             return Poll<Optional<Resp>>(not_ready);
         auto r = in_flight_.front().poll();
@@ -64,13 +64,13 @@ public:
         in_flight_.insert(std::make_pair(callid, (*service_)(std::move(in))));
     }
 
-    void dispatchErr(folly::exception_wrapper err) {}
+    void dispatchErr(folly::exception_wrapper err) override {}
 
-    bool has_in_flight() {
+    bool has_in_flight() override {
         return !in_flight_.empty();
     }
 
-    Poll<Optional<Resp>> poll() {
+    Poll<Optional<Resp>> poll() override {
         if (in_flight_.empty())
             return Poll<Optional<Resp>>(not_ready);
         for (auto it = in_flight_.begin(); it != in_flight_.end(); ++it) {

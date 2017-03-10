@@ -25,6 +25,19 @@
 
 #include <folly/CPortability.h>
 #endif
+#if defined(__APPLE__)
+inline void *memrchr(const void *s, int c, size_t n)
+{
+    const unsigned char *src = (const unsigned char*)s + n;
+    unsigned char uc = c;
+    while (--src >= (unsigned char *) s)
+        if (*src == uc)
+            return (void *) src;
+    return NULL;
+}
+#else
+extern void *memrchr(const void *s, int c, size_t n);
+#endif
 
 #if FOLLY_HAVE_SCHED_H
  #include <sched.h>
