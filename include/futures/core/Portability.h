@@ -25,6 +25,7 @@
 
 #include <folly/CPortability.h>
 #endif
+
 #if defined(__APPLE__)
 inline void *memrchr(const void *s, int c, size_t n)
 {
@@ -35,8 +36,6 @@ inline void *memrchr(const void *s, int c, size_t n)
             return (void *) src;
     return NULL;
 }
-#else
-extern void *memrchr(const void *s, int c, size_t n);
 #endif
 
 #if FOLLY_HAVE_SCHED_H
