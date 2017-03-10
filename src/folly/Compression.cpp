@@ -16,6 +16,10 @@
 
 #include <futures/core/Compression.h>
 
+#if CONFIG_FUTURES_CPP_ZLIB
+#define FOLLY_HAVE_LIBZ 1
+#endif
+
 #if FOLLY_HAVE_LIBLZ4
 #include <lz4.h>
 #include <lz4hc.h>
