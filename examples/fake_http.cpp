@@ -72,11 +72,10 @@ static BoxedFuture<folly::Unit> process(EventExecutor *ev,
       HttpStream(client, std::make_shared<http::HttpV1RequestDecoder>()),
       HttpSink(client, std::make_shared<http::HttpV1ResponseEncoder>()),
       service)
-    << [] (Try<folly::Unit> err) {
-      if (err.hasException())
-        std::cerr << err.exception().what() << std::endl;
-      return makeOk();
-    };
+    .error([] (folly::exception_wrapper err) {
+        FUTURES_LOG(ERROR) << err.what();
+        return makeOk();
+    });
 }
 
 int main(int argc, char *argv[])
@@ -100,12 +99,7 @@ int main(int argc, char *argv[])
         // auto loop = EventExecutor::current();
         loop->spawn(process(loop, new_sock, pservice));
         // loop->spawn(processWs(loop, client, pWsservice));
-        })
-  .then([] (Try<folly::Unit> err) {
-      if (err.hasException())
-        std::cerr << "Error: " << err.exception().what() << std::endl;
-      return makeOk();
-      });
+        });
   auto sig = io::signal(&loop, SIGINT)
     >> [&pool] (int signum) {
         std::cerr << "killed by " << signum << std::endl;

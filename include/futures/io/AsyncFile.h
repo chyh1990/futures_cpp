@@ -38,6 +38,7 @@ public:
     void closeSync();
     BoxedFuture<Unit> close();
 
+    int fd() const { return file_.fd(); }
 private:
     folly::File file_;
 };

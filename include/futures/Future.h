@@ -399,6 +399,12 @@ public:
       Poll<folly::Unit> p = spawn_.poll_future(inner_);
       if (p.hasException()) {
         inner_->mu_.complete();
+        if (p.hasException<FutureCancelledException>()) {
+          FUTURES_DLOG(ERROR) << p.exception().what();
+        } else {
+          FUTURES_LOG(ERROR) << "Unhandled exception: " << p.exception().what();
+          p.throwIfFailed();
+        }
         return;
       } else {
         Async<folly::Unit> r = folly::moveFromTry(p);

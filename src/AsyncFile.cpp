@@ -69,9 +69,12 @@ BoxedFuture<Unit> AsyncFile::open(const std::string &path, int flags, mode_t mod
 
 ssize_t AsyncFile::readSync(void *buf, size_t count)
 {
+again:
     ssize_t size = ::read(file_.fd(), buf, count);
-    if (size < 0)
+    if (size < 0) {
+        if (errno == EINTR) goto again;
         throwSystemError("read");
+    }
     return size;
 }
 
@@ -96,9 +99,12 @@ BoxedFuture<AsyncFile::buf_ptr> AsyncFile::read(buf_ptr buf)
 
 ssize_t AsyncFile::writeSync(const void *buf, size_t count)
 {
+again:
     ssize_t size = ::write(file_.fd(), buf, count);
-    if (size < 0)
+    if (size < 0) {
+        if (errno == EINTR) goto again;
         throwSystemError("write");
+    }
     return size;
 }
 
