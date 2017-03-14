@@ -182,6 +182,10 @@ public:
         }
     }
 
+    const folly::SocketAddress getPeerAddress() const {
+        return peer_addr_;
+    }
+
     // future API
     static SockConnectFuture connect(EventExecutor *ev, const folly::SocketAddress &addr);
     WriteFuture write(std::unique_ptr<folly::IOBuf> buf);

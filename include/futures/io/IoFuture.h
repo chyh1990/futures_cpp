@@ -136,19 +136,19 @@ public:
         }
     }
 
-    Poll<folly::Unit> pollComplete() override {
+    Poll<Unit> pollComplete() override {
         if (!write_req_) {
             if (q_.empty()) return makePollReady(folly::unit);
             write_req_ = io_->doWrite(folly::make_unique<WriterCompletionToken>(q_.move()));
         }
         auto r = write_req_->poll();
         if (r.hasException())
-            return Poll<folly::Unit>(r.exception());
+            return Poll<Unit>(r.exception());
         if (r->hasValue()) {
             write_req_.reset();
-            return makePollReady(folly::unit);
+            return makePollReady(unit);
         }
-        return Poll<folly::Unit>(not_ready);
+        return Poll<Unit>(not_ready);
     }
 
 private:
