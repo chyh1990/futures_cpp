@@ -106,8 +106,16 @@ void HttpV1RequestEncoder::encode(
         ' ' << out.path << " HTTP/1.1\r\n";
     for (auto &e: out.headers)
         ss << e.first << ": " << e.second << "\r\n";
-    if (!out.body.empty()) {
-        ss << "Content-Length: " << out.body.chainLength() << "\r\n";
+    switch (mode_) {
+        case EncoderLengthMode::ContentLength: {
+            auto it = out.headers.find("Content-Length");
+            if (!out.body.empty() && (it == out.headers.end())) {
+                ss << "Content-Length: " << out.body.chainLength() << "\r\n";
+            }
+            break;
+        }
+    default:
+        break;
     }
     ss << "\r\n";
     ss.flush();

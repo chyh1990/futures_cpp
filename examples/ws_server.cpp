@@ -1,5 +1,6 @@
 #include <futures/http/WsController.h>
 #include <futures/io/Signal.h>
+#include <futures/Timer.h>
 #include "json.hpp"
 
 using namespace futures;
@@ -27,15 +28,9 @@ public:
         it = conns_.erase(it);
         continue;
       }
-      auto msg = "FROM " + std::to_string((*it)->getTransport()->getPeerAddress().getPort()) + ": " + text;
-      // (*it)->startSend(websocket::DataFrame(websocket::DataFrame::TEXT, msg));
-      (*it)->sendText(msg);
+      (*it)->sendText(text);
       ++it;
     }
-  }
-
-  void shutdown() {
-    conns_.clear();
   }
 
 private:
@@ -87,8 +82,19 @@ public:
 protected:
   BoxedFuture<Unit> onText(websocket::Connection::Ptr conn, const std::string &data) {
     FUTURES_DLOG(INFO) << "text: " << data;
-    if (data.size() < 2) throw std::invalid_argument("invalid packet");
-    if (data[0] != '4') throw std::invalid_argument("unknown protocol version");
+    if (data.size() < 1) throw std::invalid_argument("invalid packet");
+    switch (data[0]) {
+    case '2':
+      conn->sendText("3");
+      return makeOk();
+    case '4':
+      return parseMessage(conn, data);
+    default:
+      throw std::invalid_argument("unknown packet type");
+    }
+  }
+
+  BoxedFuture<Unit> parseMessage(websocket::Connection::Ptr conn, const std::string &data) {
     json j;
     switch (data[1]) {
     case '1':
@@ -167,10 +173,19 @@ int main(int argc, char *argv[])
   ws->addRoute("^/echo/$", std::make_shared<EchoHandler>(b));
   ws->addRoute("^/socket.io/\\?(.*)$", std::make_shared<SocketIOHandler>());
 
+  auto timer = makeLoop(0, [&ev, b] (int) {
+      return delay(&ev, 1)
+        | [b] (Unit) {
+          FUTURES_DLOG(INFO) << "onTimer";
+          b->broadcast("42{}");
+          return makeContinue<Unit, int>(0);
+        };
+  });
+  ev.spawn(std::move(timer));
+
   auto sig = io::signal(&ev, SIGINT)
     >> [b] (int num) {
       EventExecutor::current()->stop();
-      b->shutdown();
       return makeOk();
     };
   ev.spawn(std::move(sig));

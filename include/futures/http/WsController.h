@@ -170,7 +170,7 @@ public:
     }
 
 private:
-    std::shared_ptr<WsServer> server_;
+    std::weak_ptr<WsServer> server_;
     io::SocketChannel::Ptr sock_;
     Stream stream_;
     Sink sink_;
@@ -259,7 +259,9 @@ private:
 };
 
 bool Connection::matchHandler(const std::string &url) {
-    for (auto &e: server_->resource_) {
+    auto server = server_.lock();
+    if (!server) return false;
+    for (auto &e: server->resource_) {
         if(boost::regex_match(url, matches_, e.first)) {
             handler_ = e.second;
             return true;

@@ -114,6 +114,8 @@ struct ConnState {
   http::HttpFrame header_;
   http::HttpV1RequestEncoder enc_;
   UrlResult target_;
+
+  ConnState() : enc_(http::EncoderLengthMode::Unknown) {}
 };
 
 static BoxedFuture<folly::IPAddress> resolveWithCache(dns::AsyncResolver::Ptr resolver, const std::string &host)
@@ -147,14 +149,18 @@ static BoxedFuture<folly::Unit> forwardResponse(std::shared_ptr<ConnState> state
         FUTURES_DLOG() << "Done send frame: " << size << ", dir: " << dir;
         return makeOk();
     })
-    >> [dir] (Unit) {
+    .then([dir] (Try<Unit> err) {
+      if (err.hasException()) {
+        FUTURES_LOG(ERROR) << err.exception().what();
+        return makeOk();
+      }
       FUTURES_DLOG() << "Done forward response, dir: " << dir;
       // inbound ended
       if (!dir) {
         throw std::runtime_error("keep-alive unsupported");
       }
       return makeOk();
-    };
+    });
 }
 
 // static BoxedFuture<folly::Unit> upgradeTcp(std::shared_ptr<ConnState> state) {
@@ -203,6 +209,9 @@ static BoxedFuture<folly::Unit> process(EventExecutor *ev,
               state->header_.path = state->target_.path;
               // we don't track connection response, use EOF
               state->header_.headers["Connection"] = "close";
+              auto it = state->header_.headers.find("Proxy-Connection");
+              if (it != state->header_.headers.end())
+                state->header_.headers.erase(it);
               state->enc_.encode(http::Request(std::move(state->header_)), q);
               assert(!q.empty());
               return state->outbound_->write(q.move());
@@ -249,7 +258,9 @@ static BoxedFuture<folly::Unit> process(EventExecutor *ev,
         EventExecutor::current()->spawn(forwardResponse(state, true));
         return forwardResponse(state).boxed();
       }
-      return ResultFuture<Unit>(std::move(err)).boxed();
+      if (err.hasException())
+        FUTURES_LOG(ERROR) << err.exception().what();
+      return makeOk().boxed();
   });
   // return ProxyFuture(ptr, client);
 }

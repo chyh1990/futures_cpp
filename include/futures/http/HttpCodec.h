@@ -35,6 +35,12 @@ private:
     std::unique_ptr<Parser> impl_;
 };
 
+enum class EncoderLengthMode {
+    Unknown,
+    ContentLength,
+    Chunked,
+};
+
 class HttpV1ResponseEncoder:
     public codec::EncoderBase<Response> {
 public:
@@ -50,7 +56,13 @@ class HttpV1RequestEncoder:
 public:
     using Out = Request;
 
+    HttpV1RequestEncoder(EncoderLengthMode mode = EncoderLengthMode::ContentLength)
+        : mode_(mode) {}
+
     void encode(Out&& out, folly::IOBufQueue &buf) override;
+
+private:
+    EncoderLengthMode mode_;
 };
 
 
