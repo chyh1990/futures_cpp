@@ -137,6 +137,11 @@ public:
         : ctx_(ptr) {
     }
 
+    TimerKeeperFuture(TimerKeeper::Ptr ptr,
+            io::intrusive_ptr<TimerKeeper::CompletionToken> tok)
+        : ctx_(ptr), tok_(tok) {
+    }
+
     Poll<Item> poll() {
         if (!tok_)
             tok_ = ctx_->doTimeout();

@@ -63,6 +63,10 @@ public:
         return makeOk().boxed();
     }
 
+    bool hasClosed() const override {
+        return closed_;
+    }
+
 private:
     bool closed_ = false;
     std::deque<Req> in_flight_;

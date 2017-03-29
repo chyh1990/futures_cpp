@@ -13,6 +13,7 @@ public:
     virtual void dispatchErr(folly::exception_wrapper err) = 0;
     virtual bool has_in_flight() = 0;
     virtual Poll<Optional<Resp>> poll() = 0;
+    virtual bool hasClosed() const { return false; }
     virtual ~IDispatcher() = default;
 };
 

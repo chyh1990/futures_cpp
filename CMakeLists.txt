@@ -41,6 +41,7 @@ if (CPPBUILD_IS_TOPLEVEL)
   CPPBUILD_APP_TARGET(ex_connect_proxy examples/connect_proxy.cpp)
   CPPBUILD_APP_TARGET(ex_console examples/console.cpp)
   CPPBUILD_APP_TARGET(ex_ws_server examples/ws_server.cpp)
+  CPPBUILD_APP_TARGET(ex_echo examples/echo.cpp)
 endif()
 
 CPPBUILD_UNITTEST()
