@@ -13,6 +13,9 @@ OPTION(ENABLE_EXAMPLES "build examples" OFF)
 OPTION(ENABLE_UNITTEST "build unit tests" OFF)
 OPTION(ENABLE_STATIC_DEPS "disable static dependencies" ON)
 
+OPTION(ENABLE_MOD_REDIS "build redis module" ON)
+OPTION(ENABLE_MOD_READLINE "build readline module" ON)
+
 # find libs
 if (ENABLE_STATIC_DEPS)
   set(BOOST_USE_STATIC_LIBS        ON)
@@ -36,6 +39,8 @@ endif ()
 
 INCLUDE_DIRECTORIES(${futures_cpp_SOURCE_DIR}/include)
 INCLUDE_DIRECTORIES(${futures_cpp_SOURCE_DIR}/deps/libev/include)
+
+SET(FUTURES_CPP_ROOT ${futures_cpp_SOURCE_DIR})
 
 AUX_SOURCE_DIRECTORY(src CORE_SRC)
 AUX_SOURCE_DIRECTORY(src/folly FOLLY_LITE_SRC)
@@ -68,6 +73,14 @@ MACRO(FUTURES_CPP_BUILD_EXAMPLE name)
   INSTALL(TARGETS ${name} DESTINATION bin)
 ENDMACRO()
 
+# Modules
+if (ENABLE_MOD_REDIS)
+  ADD_SUBDIRECTORY(${futures_cpp_SOURCE_DIR}/modules/futures_redis)
+endif ()
+if (ENABLE_MOD_READLINE)
+  ADD_SUBDIRECTORY(${futures_cpp_SOURCE_DIR}/modules/futures_readline)
+endif ()
+
 if (ENABLE_EXAMPLES)
   FUTURES_CPP_BUILD_EXAMPLE(ex_fake_http examples/fake_http.cpp)
   FUTURES_CPP_BUILD_EXAMPLE(ex_client_test examples/client_test.cpp)
@@ -78,12 +91,19 @@ if (ENABLE_EXAMPLES)
 endif()
 
 if (ENABLE_TEST)
-  ADD_SUBDIRECTORY(${futures_cpp_SOURCE_DIR}/deps/gtest)
-  INCLUDE_DIRECTORIES(${futures_cpp_SOURCE_DIR}/deps/gtest/include)
-  FILE(GLOB_RECURSE unittest_SRC
-    "test/*.cc"
-    "test/*.cpp"
-    )
-  ADD_EXECUTABLE(futures_cpp_test ${unittest_SRC})
-  TARGET_LINK_LIBRARIES(futures_cpp_test futures_cpp gtest)
-endif()
+ADD_SUBDIRECTORY(${futures_cpp_SOURCE_DIR}/deps/gtest)
+endif ()
+
+MACRO(FUTURES_CPP_UNITTEST name)
+  if (ENABLE_TEST)
+    INCLUDE_DIRECTORIES(${futures_cpp_SOURCE_DIR}/deps/gtest/include)
+    FILE(GLOB_RECURSE unittest_SRC
+      "test/*.cc"
+      "test/*.cpp"
+      )
+    ADD_EXECUTABLE(${name}_test ${unittest_SRC})
+    TARGET_LINK_LIBRARIES(${name}_test futures_cpp gtest)
+  endif()
+ENDMACRO()
+
+FUTURES_CPP_UNITTEST(futures_cpp)
