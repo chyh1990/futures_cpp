@@ -1,0 +1,11 @@
+[package]
+name = "gtest"
+version = "1.7.0"
+authors = ["Google"]
+
+[target.linux]
+link-libs = ["pthread"]
+
+[exports]
+includes = ["include"]
+libs = ["gtest"]
