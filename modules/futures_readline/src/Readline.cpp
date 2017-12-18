@@ -4,6 +4,10 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
+#if RL_READLINE_VERSION < 0x0500
+#define rl_vcpfunc_t VCPFunction
+#endif
+
 namespace futures {
 namespace readline {
 
@@ -22,7 +26,9 @@ void Readline::setAlreadyPrompt(bool v) {
 }
 
 void Readline::notifyNewLine() {
+#if RL_READLINE_VERSION >= 0x0410
     rl_on_new_line_with_prompt();
+#endif
 }
 
 Readline::Readline(EventExecutor *ev, const std::string& prompt)

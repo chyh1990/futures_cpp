@@ -14,7 +14,9 @@ TARGET_LINK_LIBRARIES(futures_zookeeper zkclient)
 FUTURES_CPP_BUILD_MODULE_EXAMPLE(ex_zkdlock examples/dlock.cpp)
 
 INCLUDE_DIRECTORIES(${FUTURES_CPP_MODULE_ROOT}/futures_readline/include)
-FUTURES_CPP_BUILD_MODULE_EXAMPLE(ex_zkcli examples/cli.cpp)
-TARGET_LINK_LIBRARIES(ex_zkcli futures_readline)
+if (ENABLE_EXAMPLES)
+  FUTURES_CPP_BUILD_MODULE_EXAMPLE(ex_zkcli examples/cli.cpp)
+  TARGET_LINK_LIBRARIES(ex_zkcli futures_readline)
+endif ()
 
 FUTURES_CPP_MODULE_UNITTEST()
