@@ -1,0 +1,149 @@
+/* config.h.in.  Generated from configure.ac by autoheader.  */
+
+/* Define to 1 if you have the <arpa/inet.h> header file. */
+#cmakedefine HAVE_ARPA_INET_H
+
+/* Define to 1 if you have the <dlfcn.h> header file. */
+#cmakedefine HAVE_DLFCN_H
+
+/* Define to 1 if you have the <fcntl.h> header file. */
+#cmakedefine HAVE_FCNTL_H
+
+/* Define to 1 if you have the file `generated/zookeeper.jute.c'. */
+#cmakedefine HAVE_GENERATED_ZOOKEEPER_JUTE_C
+
+/* Define to 1 if you have the file `generated/zookeeper.jute.h'. */
+#cmakedefine HAVE_GENERATED_ZOOKEEPER_JUTE_H
+
+/* Define to 1 if you have the `getcwd' function. */
+#cmakedefine HAVE_GETCWD
+
+/* Define to 1 if you have the `gethostbyname' function. */
+#cmakedefine HAVE_GETHOSTBYNAME
+
+/* Define to 1 if you have the `gethostname' function. */
+#cmakedefine HAVE_GETHOSTNAME
+
+/* Define to 1 if you have the `getlogin' function. */
+#cmakedefine HAVE_GETLOGIN
+
+/* Define to 1 if you have the `getpwuid_r' function. */
+#cmakedefine HAVE_GETPWUID_R
+
+/* Define to 1 if you have the `gettimeofday' function. */
+#cmakedefine HAVE_GETTIMEOFDAY
+
+/* Define to 1 if you have the `getuid' function. */
+#cmakedefine HAVE_GETUID
+
+/* Define to 1 if you have the <inttypes.h> header file. */
+#cmakedefine HAVE_INTTYPES_H
+
+/* Define to 1 if you have the `memmove' function. */
+#cmakedefine HAVE_MEMMOVE
+
+/* Define to 1 if you have the <memory.h> header file. */
+#cmakedefine HAVE_MEMORY_H
+
+/* Define to 1 if you have the `memset' function. */
+#cmakedefine HAVE_MEMSET
+
+/* Define to 1 if you have the <netdb.h> header file. */
+#cmakedefine HAVE_NETDB_H
+
+/* Define to 1 if you have the <netinet/in.h> header file. */
+#cmakedefine HAVE_NETINET_IN_H
+
+/* Define to 1 if you have the `poll' function. */
+#cmakedefine HAVE_POLL
+
+/* Define to 1 if you have the `socket' function. */
+#cmakedefine HAVE_SOCKET
+
+/* Define to 1 if you have the <stdint.h> header file. */
+#cmakedefine HAVE_STDINT_H
+
+/* Define to 1 if you have the <stdlib.h> header file. */
+#cmakedefine HAVE_STDLIB_H
+
+/* Define to 1 if you have the `strchr' function. */
+#cmakedefine HAVE_STRCHR
+
+/* Define to 1 if you have the `strdup' function. */
+#cmakedefine HAVE_STRDUP
+
+/* Define to 1 if you have the `strerror' function. */
+#cmakedefine HAVE_STRERROR
+
+/* Define to 1 if you have the <strings.h> header file. */
+#cmakedefine HAVE_STRINGS_H
+
+/* Define to 1 if you have the <string.h> header file. */
+#cmakedefine HAVE_STRING_H
+
+/* Define to 1 if you have the `strtol' function. */
+#cmakedefine HAVE_STRTOL
+
+/* Define to 1 if you have the <sys/socket.h> header file. */
+#cmakedefine HAVE_SYS_SOCKET_H
+
+/* Define to 1 if you have the <sys/stat.h> header file. */
+#cmakedefine HAVE_SYS_STAT_H
+
+/* Define to 1 if you have the <sys/time.h> header file. */
+#cmakedefine HAVE_SYS_TIME_H
+
+/* Define to 1 if you have the <sys/types.h> header file. */
+#cmakedefine HAVE_SYS_TYPES_H
+
+/* Define to 1 if you have the <sys/utsname.h> header file. */
+#cmakedefine HAVE_SYS_UTSNAME_H
+
+/* Define to 1 if you have the <unistd.h> header file. */
+#cmakedefine HAVE_UNISTD_H
+
+/* Define to the sub-directory in which libtool stores uninstalled libraries.
+   */
+#cmakedefine LT_OBJDIR
+
+/* Name of package */
+#cmakedefine PACKAGE @PACKAGE_NAME@
+
+/* Define to the address where bug reports for this package should be sent. */
+#cmakedefine PACKAGE_BUGREPORT @PACKAGE_BUGREPORT@
+
+/* Define to the full name of this package. */
+#cmakedefine PACKAGE_NAME @PACKAGE_NAME@
+
+/* Define to the full name and version of this package. */
+#cmakedefine PACKAGE_STRING @PACKAGE_NAME@
+
+/* Define to the one symbol short name of this package. */
+#cmakedefine PACKAGE_TARNAME @PACKAGE_TARNAME@
+
+/* Define to the home page for this package. */
+#cmakedefine PACKAGE_URL ""
+
+/* Define to the version of this package. */
+#cmakedefine PACKAGE_VERSION @PACKAGE_VERSION@
+
+/* poll() second argument type */
+#cmakedefine POLL_NFDS_TYPE
+
+/* Define to 1 if you have the ANSI C header files. */
+#cmakedefine STDC_HEADERS
+
+/* Define to 1 if you can safely include both <sys/time.h> and <time.h>. */
+#cmakedefine TIME_WITH_SYS_TIME
+
+/* Version number of package */
+#cmakedefine VERSION
+
+/* Define to empty if `const' does not conform to ANSI C. */
+#cmakedefine const
+
+/* Define to `__inline__' or `__inline' if that's what the C compiler
+   calls it, or to nothing if 'inline' is not supported under any name.  */
+#ifndef __cplusplus
+#cmakedefine inline
+#endif

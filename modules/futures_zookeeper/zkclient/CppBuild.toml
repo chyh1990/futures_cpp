@@ -1,0 +1,9 @@
+
+[package]
+name = "zkclient"
+version = "0.1.0"
+authors = ["Yuheng Chen <yuhengchen@sensetime.com>"]
+
+[exports]
+includes = ["include"]
+
