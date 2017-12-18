@@ -17,5 +17,5 @@ SET(ALL_SRC src/RedisReply.cpp src/RedisFuture.cpp ${HIREDIS_SRC})
 FUTURES_CPP_BUILD_MODULE(${ALL_SRC})
 FUTURES_CPP_BUILD_MODULE_EXAMPLE(ex_subscriber examples/subscriber.cpp)
 
-FUTURES_CPP_MODULE_UNITTEST(redis)
+FUTURES_CPP_MODULE_UNITTEST()
 

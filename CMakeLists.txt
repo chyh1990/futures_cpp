@@ -15,6 +15,7 @@ OPTION(ENABLE_STATIC_DEPS "disable static dependencies" ON)
 
 OPTION(ENABLE_MOD_REDIS "build redis module" ON)
 OPTION(ENABLE_MOD_READLINE "build readline module" ON)
+OPTION(ENABLE_MOD_ZOOKEEPER "build zookeeper module" ON)
 
 # find libs
 if (ENABLE_STATIC_DEPS)
@@ -79,6 +80,9 @@ if (ENABLE_MOD_REDIS)
 endif ()
 if (ENABLE_MOD_READLINE)
   ADD_SUBDIRECTORY(${futures_cpp_SOURCE_DIR}/modules/futures_readline)
+endif ()
+if (ENABLE_MOD_ZOOKEEPER)
+  ADD_SUBDIRECTORY(${futures_cpp_SOURCE_DIR}/modules/futures_zookeeper)
 endif ()
 
 if (ENABLE_EXAMPLES)
