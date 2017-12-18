@@ -1,0 +1,13 @@
+
+[package]
+name = "mariadb_connector"
+version = "3.0.1"
+authors = ["Yuheng Chen <yuhengchen@sensetime.com>"]
+
+[exports]
+includes = ["include"]
+libs = ["mariadbclient"]
+
+# [dependencies.BoostParts]
+# branch = "master"
+# url = "git@gitlab.bj.sensetime.com:core/BoostParts.git"
