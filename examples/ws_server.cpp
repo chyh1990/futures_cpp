@@ -1,3 +1,4 @@
+#include <set>
 #include <futures/http/WsController.h>
 #include <futures/io/Signal.h>
 #include <futures/Timer.h>

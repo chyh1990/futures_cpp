@@ -2,14 +2,14 @@
 
 #include <map>
 #include <array>
-#include <boost/regex.hpp>
+#include <regex>
 #include <futures/http/HttpCodec.h>
 #include <futures/service/Service.h>
 
 namespace futures {
 namespace http {
 
-#define REGEX_NS boost
+#define REGEX_NS std
 
 class HttpRequest {
 public:

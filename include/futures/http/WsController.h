@@ -1,6 +1,6 @@
 #pragma once
 
-#include <boost/regex.hpp>
+#include <regex>
 #include <futures/http/WsCodec.h>
 #include <futures/service/Service.h>
 #include <futures/io/AsyncSocket.h>
@@ -175,7 +175,7 @@ private:
     Stream stream_;
     Sink sink_;
     std::shared_ptr<Handler> handler_;
-    boost::smatch matches_;
+    std::smatch matches_;
 
     State s_ = HANDSHAKING;
     Notifier cv_;
@@ -242,12 +242,12 @@ public:
 
 private:
     io::AsyncServerSocket::Ptr sock_;
-    class regex_orderable : public boost::regex {
+    class regex_orderable : public std::regex {
         std::string str;
         public:
-        regex_orderable(const char *regex_cstr) : boost::regex(regex_cstr), str(regex_cstr) {}
+        regex_orderable(const char *regex_cstr) : std::regex(regex_cstr), str(regex_cstr) {}
         regex_orderable(const std::string &regex_str)
-            : boost::regex(regex_str), str(regex_str) {}
+            : std::regex(regex_str), str(regex_str) {}
         bool operator<(const regex_orderable &rhs) const {
             return str<rhs.str;
         }
@@ -262,7 +262,7 @@ bool Connection::matchHandler(const std::string &url) {
     auto server = server_.lock();
     if (!server) return false;
     for (auto &e: server->resource_) {
-        if(boost::regex_match(url, matches_, e.first)) {
+        if(std::regex_match(url, matches_, e.first)) {
             handler_ = e.second;
             return true;
         }
