@@ -7,7 +7,7 @@ matrix:
       addons:
         apt:
           sources:
-      	    - george-edison55-precise-backports
+            - george-edison55-precise-backports
             - ubuntu-toolchain-r-test
           packages:
             - g++-4.9
@@ -21,8 +21,8 @@ matrix:
       addons:
         apt:
           sources:
+            - george-edison55-precise-backports
             - ubuntu-toolchain-r-test
-      	    - george-edison55-precise-backports
           packages:
             - g++-7
             - cmake-data
