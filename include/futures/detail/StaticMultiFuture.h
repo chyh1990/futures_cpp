@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <futures/Future.h>
 
 namespace futures {

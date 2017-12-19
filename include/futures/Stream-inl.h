@@ -373,4 +373,36 @@ IterStream<Iter> makeIterStream(Iter&& begin, Iter&& end) {
     return IterStream<Iter>(std::forward<Iter>(begin), std::forward<Iter>(end));
 }
 
+namespace detail {
+
+class IntIter {
+public:
+	using value_type = int;
+	using difference_type = int;
+	using pointer = int*;
+	using reference = int&;
+	using iterator_category = std::forward_iterator_tag;
+
+	IntIter(int v) : it_(v) {}
+	int operator++() {
+		return ++it_;
+	}
+
+	int operator*() {
+		return it_;
+	}
+
+	bool operator==(const IntIter& it) const {
+		return it_ == it.it_;
+	}
+private:
+	int it_;
+};
+
+}
+
+inline IterStream<detail::IntIter> nTimes(int n) {
+    return IterStream<detail::IntIter>(detail::IntIter(0), detail::IntIter(n));
+}
+
 }
