@@ -11,8 +11,8 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-4.9
-	    - cmake-data
-	    - cmake
+            - cmake-data
+            - cmake
       env:
          - MATRIX_EVAL="CC=gcc-4.9 && CXX=g++-4.9"
 
@@ -25,8 +25,8 @@ matrix:
       	    - george-edison55-precise-backports
           packages:
             - g++-7
-	    - cmake-data
-	    - cmake
+            - cmake-data
+            - cmake
       env:
         - MATRIX_EVAL="CC=gcc-7 && CXX=g++-7"
 
