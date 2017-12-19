@@ -34,7 +34,7 @@ before_install:
     - eval "${MATRIX_EVAL}"
 
 install:
-    - apt-get install libboost-dev libssl-dev libz-dev
+    - sudo apt-get install libboost-dev libssl-dev libz-dev
 
 script:
     - cmake --version
