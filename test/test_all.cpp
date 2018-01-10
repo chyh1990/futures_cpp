@@ -137,7 +137,7 @@ TEST(Promise, Simple) {
 	Promise<int> p;
 	auto f = p.getFuture();
 #if __cplusplus >= 201402L
-	std::thread t([p{std::move(p)}] () {
+	std::thread t([p{std::move(p)}] () mutable {
 		p.setValue(3);
 	});
 #else
