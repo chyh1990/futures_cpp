@@ -33,7 +33,11 @@ TEST(Future, Ok) {
 	auto f = makeOk(5);
 	auto p = f.poll();
 	EXPECT_EQ(p.value().value(), 5);
+#if DEBUG_FUTURE
 	EXPECT_ANY_THROW(f.poll());
+#else
+	EXPECT_NO_THROW(f.poll());
+#endif
 }
 
 TEST(Future, Move) {

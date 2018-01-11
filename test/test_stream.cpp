@@ -137,6 +137,27 @@ TEST(StreamIO, Accept) {
     }).error([] (folly::exception_wrapper err) {
         std::cerr << err.what() << std::endl;
     });
+    for (size_t i = 0; i < 2; i++) {
+        auto f = io::SocketChannel::connect(&ev, addr)
+            .andThen([] (io::SocketChannel::Ptr sock) {
+                    return sock->readStream()
+                    .forEach([sock] (std::unique_ptr<folly::IOBuf> buf) {
+                            std::cerr << "READ: " << buf->computeChainDataLength() << std::endl;
+                            EventExecutor::current()->spawn(
+                                    sock->write(std::move(buf))
+                                        .error([] (folly::exception_wrapper w) {
+                                            std::cerr << "ERR: " << w.what() << std::endl;
+                                        })
+                                     );
+                            });
+            })
+	    .then([] (Try<folly::Unit> err) {
+                if (err.hasException())
+                    std::cerr << err.exception().what() << std::endl;
+                return makeOk();
+            });
+        ev.spawn(std::move(f));
+    }
     ev.spawn(std::move(f));
     ev.run();
 }
