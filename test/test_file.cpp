@@ -7,7 +7,7 @@ using namespace futures;
 TEST(File, Read) {
     EventExecutor ev;
     auto f = std::make_shared<io::AsyncFile>();
-    f->openSync("./src/miniz/miniz.c", O_RDONLY);
+    f->openSync("./CMakeCache.txt", O_RDONLY);
     EXPECT_TRUE(f->isValid());
 
     auto d = (delay(&ev, 0.2)
