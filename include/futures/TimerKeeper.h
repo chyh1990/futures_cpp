@@ -58,6 +58,8 @@ public:
                 return makePollReady(folly::Unit());
             case CANCELLED:
                 return Poll<folly::Unit>(FutureCancelledException());
+            default:
+                FUTURES_CHECK(0);
             }
         }
 

@@ -143,6 +143,7 @@ static BoxedFuture<folly::Unit> forwardResponse(std::shared_ptr<ConnState> state
   if (dir) std::swap(in, out);
   return in->readStream()
     .andThen([state, out] (std::unique_ptr<folly::IOBuf> buf) {
+        // FUTURES_LOG(DEBUG) << buf->coalesce().str();
         return out->write(std::move(buf));
     })
     .forEach([dir] (size_t size) {
@@ -276,15 +277,15 @@ int main(int argc, char *argv[])
   auto s = std::make_shared<io::AsyncServerSocket>(&loop, bindAddr);
 
   auto resolver = std::make_shared<dns::AsyncResolver>(&loop);
-  auto timer = std::make_shared<TimerKeeper>(&loop, 30.0);
-  auto conn_timer = std::make_shared<TimerKeeper>(&loop, 5.0);
 
   auto f = s->accept()
-    .forEach2([resolver, timer, conn_timer]
+    .forEach2([&loop, resolver]
         (tcp::Socket client, folly::SocketAddress peer) {
         auto ev = EventExecutor::current();
         auto new_sock = std::make_shared<io::SocketChannel>(ev,
             std::move(client), peer);
+        auto timer = std::make_shared<TimerKeeper>(&loop, 30.0);
+        auto conn_timer = std::make_shared<TimerKeeper>(&loop, 5.0);
         ev->spawn(
             timeout(timer, process(ev, resolver, conn_timer, new_sock))
               .error([] (folly::exception_wrapper err) {

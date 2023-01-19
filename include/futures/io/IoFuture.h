@@ -48,6 +48,8 @@ public:
                     return pollOneItem();
                 case CANCELLED:
                     return Poll<Optional<Item>>(FutureCancelledException());
+                default:
+                    FUTURES_CHECK(0);
             }
         }
 

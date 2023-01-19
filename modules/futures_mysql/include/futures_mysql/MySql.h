@@ -1,6 +1,7 @@
 #pragma once
 
-#include <memory>
+#include <cstdio>
+#include <cstdlib>
 #define define_bool 1
 // #include <ma_global.h>
 #include <mysql.h>

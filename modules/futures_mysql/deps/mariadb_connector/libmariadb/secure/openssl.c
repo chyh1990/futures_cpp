@@ -651,7 +651,7 @@ int ma_tls_verify_server_cert(MARIADB_TLS *ctls)
     return 1;
   }
 
-  if (!(cert= SSL_get_peer_certificate(ssl)))
+  if (!(cert= SSL_get1_peer_certificate(ssl)))
   {
     pvio->set_error(mysql, CR_SSL_CONNECTION_ERROR, SQLSTATE_UNKNOWN,
                     ER(CR_SSL_CONNECTION_ERROR), "Unable to get server certificate");
@@ -711,7 +711,7 @@ unsigned int ma_tls_get_finger_print(MARIADB_TLS *ctls, char *fp, unsigned int l
 
   mysql= SSL_get_app_data(ctls->ssl);
 
-  if (!(cert= SSL_get_peer_certificate(ctls->ssl)))
+  if (!(cert= SSL_get1_peer_certificate(ctls->ssl)))
   {
     my_set_error(mysql, CR_SSL_CONNECTION_ERROR, SQLSTATE_UNKNOWN,
                         ER(CR_SSL_CONNECTION_ERROR), 
